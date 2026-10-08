@@ -1,6 +1,6 @@
 # Roadmap
 
-The session ladder. Levels are defined in `~/phd/CONVENTIONS.md`: 0 play, 1 reproduce,
+The session ladder. Levels are defined in `CLAUDE.md`: 0 play, 1 reproduce,
 2 implement, 3 extend. A box is ticked when Corey has worked through the session.
 
 - [ ] **00 Delta hedging loses money when trading costs money** (level 0).
@@ -18,7 +18,7 @@ The session ladder. Levels are defined in `~/phd/CONVENTIONS.md`: 0 play, 1 repr
   changes in a Markov market and that something does in a path-dependent one.
 - [ ] **04 Deep hedging under rough Bergomi** (level 1). The setup of Horvath, Teichmann
   and Zuric (2021). The rough Bergomi simulator comes from the sibling repository
-  `~/phd/rough-volatility`, package `roughvol`.
+  [rough-volatility](https://github.com/coreyjpritchard/rough-volatility), package `roughvol`.
 - [ ] **05 A level 3 question** (level 3). Proposed: does the width of the learned
   no-trade band scale with the Hurst exponent H under rough Bergomi, and does a
   feature-based network lose more to a recurrent one as H falls?

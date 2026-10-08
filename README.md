@@ -40,10 +40,11 @@ repository builds up to that setting one session at a time.
 
 ## How to run
 
-Uses the shared environment in `~/phd/.venv` (Python 3.11, torch on CPU).
+Python 3.11 or later; torch runs on CPU.
 
 ```bash
-cd ~/phd && source .venv/bin/activate && cd deep-hedging
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"                       # once
 marimo run sessions/00_cost_of_hedging.py     # the app; marimo edit to see the code
 python sessions/00_cost_of_hedging.py         # runs every cell as a script
 pytest -m "not slow"                          # tests, a few seconds
