@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deep-hedging"
+version = "0.1.0"
+description = "Deep hedging: learning hedging policies under transaction costs with a convex risk objective, compared with delta hedging. Capstone: deep hedging under rough volatility."
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "pandas>=2.2",
+    "pyarrow>=15",
+    "plotly>=5.20",
+    "matplotlib>=3.8",
+    "marimo>=0.10",
+    "torch>=2.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "hypothesis>=6.100", "ruff>=0.4"]
+
+[tool.setuptools]
+packages = ["deephedge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: long Monte Carlo or training runs; deselect with -m 'not slow'"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "NPY"]
+
+[tool.ruff.lint.per-file-ignores]
+# marimo displays the last expression of a cell
+"sessions/*" = ["B018"]
