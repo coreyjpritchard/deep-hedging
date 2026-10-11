@@ -12,8 +12,11 @@ weight. `DeltaPolicy` stays the Black-Scholes one.
 
 Session 00's network reads three scalars built from the spot (feature column
 0): time to maturity over T, log moneyness over sqrt(tau), and the previous
-position. Those weights are cached. `rollout` is that spot calling
-convention, previous position shape (m,) and a returned position shape (m,).
+position. Those weights are cached. `GRUPolicy` reads the same three
+scalars and carries a hidden state from one date to the next. `rollout`
+is that spot calling convention, previous position shape (m,) and a
+returned position shape (m,). It calls `reset_state` when the policy has
+one, so a recurrent net starts each batch from an empty memory.
 `rollout_positions` is the general one: features `(m, f)` in, position
 `(m, d)` out, with `d` equal to the number of instruments and not
 necessarily to `f`.
@@ -67,6 +70,52 @@ class MLPPolicy(nn.Module):
             "width": self.width,
             "depth": self.depth,
         }
+
+
+class GRUPolicy(nn.Module):
+    """Recurrent network on the same three inputs as `MLPPolicy`.
+
+    A GRU cell carries a hidden state along the path. The state starts at
+    zero on the first date. `rollout` and `position_grid` call
+    `reset_state` first, so a new batch does not keep the previous batch's
+    memory, and a spot grid is the answer from an empty memory. The
+    previous position is still an input.
+
+    The last layer starts at half a share, with zero weights, so the first
+    epoch sits near the at-the-money delta.
+    """
+
+    def __init__(self, strike: float, maturity: float, hidden: int = 16):
+        super().__init__()
+        self.strike = float(strike)
+        self.maturity = float(maturity)
+        self.hidden = int(hidden)
+        self.cell = nn.GRUCell(3, self.hidden)
+        self.head = nn.Linear(self.hidden, 1)
+        nn.init.zeros_(self.head.weight)
+        nn.init.constant_(self.head.bias, 0.5)
+        self._hidden: torch.Tensor | None = None
+
+    def reset_state(self) -> None:
+        """Drop the hidden state. The next call starts from zeros."""
+        self._hidden = None
+
+    def features(self, t: float, S: torch.Tensor, prev: torch.Tensor) -> torch.Tensor:
+        tau = self.maturity - t
+        moneyness = torch.log(S / self.strike) / math.sqrt(tau)
+        return torch.stack(
+            [torch.full_like(S, tau / self.maturity), moneyness, prev], dim=-1
+        )
+
+    def forward(self, t: float, S: torch.Tensor, prev: torch.Tensor) -> torch.Tensor:
+        x = self.features(t, S, prev)
+        if self._hidden is None or self._hidden.shape[0] != x.shape[0]:
+            self._hidden = x.new_zeros(x.shape[0], self.hidden)
+        self._hidden = self.cell(x, self._hidden)
+        return self.head(self._hidden).squeeze(-1)
+
+    def config(self) -> dict:
+        return {"strike": self.strike, "maturity": self.maturity, "hidden": self.hidden}
 
 
 class GammaPolicy(nn.Module):
@@ -229,11 +278,24 @@ class NoHedgePolicy(nn.Module):
         return torch.zeros_like(S)
 
 
+def _reset_policy(policy: nn.Module) -> None:
+    """Clear a recurrent policy's memory, if it has any.
+
+    A feed-forward policy has no `reset_state`. A recurrent one implements
+    it so the next path starts from an empty memory.
+    """
+    reset = getattr(policy, "reset_state", None)
+    if callable(reset):
+        reset()
+
+
 def rollout(policy: nn.Module, paths: torch.Tensor, T: float) -> torch.Tensor:
     """Positions chosen by `policy` along price paths (m, n + 1). Returns (m, n).
 
     The hedger starts flat; each step feeds the previous position back in.
+    A policy with `reset_state` is reset first.
     """
+    _reset_policy(policy)
     m, n_plus_1 = paths.shape
     n = n_plus_1 - 1
     dt = T / n
@@ -269,8 +331,9 @@ def rollout_positions(
 
     Session 00's policies do not use this signature. They take the spot as
     a vector of shape `(m,)`. `rollout` and `rollout_paths` are that
-    case.
+    case. A policy with `reset_state` is reset first.
     """
+    _reset_policy(policy)
     feat = torch.as_tensor(features, dtype=torch.float32)
     times = np.asarray(time, dtype=float)
     m, n_plus, _f = feat.shape
@@ -309,8 +372,11 @@ def position_grid(
 ) -> np.ndarray:
     """Position chosen at time t for every (previous position, spot) pair.
 
-    Returns shape (len(prevs), len(spots)).
+    Returns shape (len(prevs), len(spots)). A recurrent policy is reset
+    first, so the grid is the empty-memory response. Along a path the
+    hidden state still carries from date to date inside `rollout`.
     """
+    _reset_policy(policy)
     s, p = np.meshgrid(spots, prevs)
     with torch.no_grad():
         out = policy(
