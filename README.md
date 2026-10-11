@@ -28,6 +28,23 @@ Findings from session 00, on 20 000 fresh paths with a 50 bp cost:
 
 The plan is in [ROADMAP.md](ROADMAP.md) and dated notes are in [LOG.md](LOG.md).
 
+## Market environments
+
+A hedger does not import a volatility model. It is trained against an environment: a market plus a cost model. The market simulates the instruments you can trade and the features you may observe, and it prices the liability you are hedging. The P&L engine turns a position in those instruments into a terminal P&L. Risk measures see only that P&L.
+
+Black-Scholes is the first market. There is one instrument, the spot, and the feature is the spot. The premium is the analytic call price and the benchmark hedge is the analytic delta. The same calls will take a Heston market (spot and variance as features, and a variance swap as a second instrument when it is traded) and, later, rough Bergomi, whose features have to carry the volatility's memory. The simulator for that model comes from the sibling repository [rough-volatility](https://github.com/coreyjpritchard/rough-volatility).
+
+Costs are not inside the simulator. `ProportionalCost` charges `c * price * |change in position|` on every trade, including opening and closing the hedge. Another cost model implements the same method and replaces it. One batch of paths can be scored at several costs.
+
+```python
+from deephedge.env import BlackScholes, Environment, ProportionalCost
+
+market = BlackScholes(s0=100, strike=100, maturity=30 / 365, sigma=0.2)
+env = Environment(market, ProportionalCost(0.005))
+paths = market.simulate(20_000, 30, seed=1)
+pnl = env.pnl(paths, market.benchmark_positions(paths))
+```
+
 ## Why
 
 Buehler, Gonon, Teichmann and Wood (2019, *Deep hedging*, Quantitative Finance 19(8))
@@ -57,12 +74,16 @@ button trains a new network in about 30 seconds at 30 steps on four cores.
 
 ## Layout
 
-- `deephedge/markets.py` Black-Scholes path simulator, numpy and torch.
-- `deephedge/hedging.py` Black-Scholes price and delta, and one P&L function that every
-  policy goes through.
-- `deephedge/risk.py` entropic risk and CVaR, numpy and torch.
+- `deephedge/env.py` the market environment: instruments, features, payoff, price,
+  benchmark hedge, and a pluggable cost. Black-Scholes is the first market.
+- `deephedge/markets.py` the Black-Scholes path simulator the environment draws from.
+- `deephedge/hedging.py` P&L of a hedged short option. Every policy goes through it.
+  The Black-Scholes price and delta are re-exported from `deephedge.env`.
+- `deephedge/risk.py` entropic risk and CVaR, numpy and torch. They take a P&L sample
+  and nothing about the market.
 - `deephedge/policy.py` the feature-based network, a delta policy with the same call
-  signature, and rollouts.
+  signature, and rollouts. A rollout on several features and several instruments is
+  there for the markets that need it.
 - `deephedge/train.py` end-to-end training and the cached settings of session 00.
 - `tests/` checks against closed forms and known rates; `pytest --impl exercises` runs
   them against Corey's own implementations in `exercises/`.

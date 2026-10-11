@@ -13,8 +13,9 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from deephedge.hedging import bs_call_price, call_payoff, pnl_from_positions_torch
-from deephedge.markets import bs_paths, to_torch
+from deephedge.env import BlackScholes, Environment, ProportionalCost
+from deephedge.hedging import call_payoff, pnl_from_positions_torch
+from deephedge.markets import to_torch
 from deephedge.policy import MLPPolicy, rollout
 from deephedge.risk import entropic_torch
 
@@ -48,9 +49,24 @@ class Setup:
     lr: float = 0.005
     seed: int = 0
 
+    def market(self) -> BlackScholes:
+        """The Black-Scholes market this setup trains against."""
+        return BlackScholes(
+            s0=self.s0,
+            strike=self.strike,
+            maturity=self.maturity,
+            sigma=self.sigma,
+            r=self.r,
+            mu=self.mu,
+        )
+
+    def environment(self) -> Environment:
+        """Market plus the proportional cost of this setup."""
+        return Environment(self.market(), ProportionalCost(self.cost))
+
     @property
     def premium(self) -> float:
-        return float(bs_call_price(self.s0, self.strike, self.maturity, self.sigma, self.r))
+        return self.market().premium()
 
     def key(self) -> str:
         return f"c{round(self.cost * 1e4):03d}bp_n{self.n_steps:03d}_lam{self.lam:g}"
@@ -123,23 +139,26 @@ def objective(
 
 
 def train_setup(setup: Setup = DEFAULT) -> TrainResult:
-    """Train an `MLPPolicy` for a `Setup` on freshly simulated Black-Scholes paths."""
-    paths = bs_paths(
-        setup.m_train, setup.n_steps, setup.maturity, setup.sigma,
-        s0=setup.s0, mu=setup.mu, seed=setup.seed,
-    )
+    """Train an `MLPPolicy` for a `Setup` on freshly simulated Black-Scholes paths.
+
+    Paths, premium and payoff come from the setup's market. The network still
+    sees the spot, which is feature column 0, through the same rollout as
+    before.
+    """
+    market = setup.market()
+    paths = market.simulate(setup.m_train, setup.n_steps, setup.seed)
     torch.manual_seed(setup.seed)
     policy = MLPPolicy(setup.strike, setup.maturity, setup.width, setup.depth)
     return train(
         policy,
-        to_torch(paths),
+        to_torch(paths.spot),
         call_payoff(setup.strike),
         lambda pnl: entropic_torch(pnl, setup.lam),
         setup.cost,
         setup.epochs,
         setup.lr,
         setup.seed,
-        premium=setup.premium,
+        premium=market.premium(),
         batch_size=setup.batch_size,
     )
 

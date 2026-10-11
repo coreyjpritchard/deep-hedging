@@ -2,6 +2,10 @@
 
 Both measures are monetary: rho(X + c) = rho(X) - c. So rho(X) is the cash that must be
 added to the position to make it acceptable.
+
+The argument is a sample of terminal P&L. These functions do not take a market,
+a payoff or a cost model. Whatever environment produced the sample is upstream,
+in `deephedge.env`.
 """
 
 from __future__ import annotations

@@ -2,8 +2,35 @@
 
 Dated entries, newest first. What was learned, what surprised, open questions.
 
-**Current state.** Session 00 is built and ready to play. **Next:** work through 00, then
-start 01 (reproduce a Buehler et al. 2019 figure in a Heston market).
+**Current state.** Session 00 is built and ready to play. The market sits behind the
+environment interface in `deephedge/env.py` (Black-Scholes only). **Next:** work through
+00, then start 01 (reproduce a Buehler et al. 2019 figure in a Heston market).
+
+## 2026-10-11 Market environment, Black-Scholes first
+
+The market now sits behind one interface in `deephedge/env.py`. A `Market` simulates
+paths of the instruments you can trade and of the features a hedger may observe, and it
+exposes the payoff, the price along a path and a benchmark hedge. An `Environment` pairs
+that market with a cost model. `terminal_pnl` turns positions in the instruments into a
+P&L in time-0 money. Risk measures take that P&L and do not see the market.
+
+Black-Scholes is the first implementation. One instrument, the spot. The feature path is
+the spot. The benchmark hedge is the analytic delta and the premium is the analytic call
+price. The log-price draw is the existing `bs_paths`, same seeds, same one Gaussian
+array of shape `(m, n)`. `ProportionalCost` is the only cost model, the proportional
+cost from session 00, and it lives on the environment rather than inside the simulator.
+
+Left open, and not implemented. Heston will use features `(spot, variance)` and may add
+a variance swap as a second instrument, with that swap's price in `instruments` and the
+variance factor only in `features`. `rollout_positions` already calls a policy with a
+feature row of width `f` and expects a position of width `d`, and `d` need not equal
+`f`. Rough Bergomi will put volatility memory into the feature path; the simulator
+stays the sibling package `roughvol`. Further cost models implement `CostModel.amount`.
+
+Session 00 numbers did not move. On 20 000 paths with seed 12345 the entropic risk at
+50 bp is still 1.05 for the network and 1.54 for delta (means -0.83 and -1.37). The
+evaluation goes through `Environment.pnl` and `benchmark_positions`, and it matches the
+previous `delta_hedge_pnl` pathwise.
 
 ## 2026-10-08 Session 00: delta hedging loses money when trading costs money
 

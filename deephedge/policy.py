@@ -1,8 +1,20 @@
-"""Hedging policies with one call signature: policy(t, S, prev) -> position.
+"""Hedging policies.
 
-`t` is the current time (a float), `S` the spot and `prev` the position held into t,
-both tensors of shape (m,). The feature-based network of Buehler, Gonon, Teichmann,
-Wood (2019) shares one set of weights across all time steps.
+A policy maps the information at one date to a position in the instruments:
+the time, the market's feature row, and the position held coming into that
+date. It does not see the market object. The benchmark hedge is the
+exception: it is `Market.benchmark_positions`, computed by the market.
+`DeltaPolicy` is that hedge for Black-Scholes, written in torch so it can
+share a rollout with the network. On a Heston market the benchmark will be
+whatever that market returns, and this class stays the Black-Scholes one.
+
+Session 00's network reads three scalars built from the spot (feature column
+0): time to maturity over T, log moneyness over sqrt(tau), and the previous
+position. Those weights are cached. `rollout` is that spot calling
+convention, previous position shape (m,) and a returned position shape (m,).
+`rollout_positions` is the general one: features `(m, f)` in, position
+`(m, d)` out, with `d` equal to the number of instruments and not
+necessarily to `f`.
 """
 
 from __future__ import annotations
@@ -101,6 +113,59 @@ def rollout_numpy(policy: nn.Module, paths: np.ndarray, T: float) -> np.ndarray:
     """`rollout` without gradients, numpy in and out, for evaluation."""
     with torch.no_grad():
         return rollout(policy, torch.as_tensor(paths, dtype=torch.float32), T).double().numpy()
+
+
+def rollout_positions(
+    policy: nn.Module,
+    features: torch.Tensor | np.ndarray,
+    time: torch.Tensor | np.ndarray,
+    n_instruments: int,
+) -> torch.Tensor:
+    """Positions along a feature path. Shape (m, n, n_instruments).
+
+    `features` has shape `(m, n + 1, f)` and `time` has shape
+    `(n + 1,)`. At date k the policy is called as
+    `policy(t_k, features[:, k, :], prev)` and must return a tensor of
+    shape `(m, n_instruments)`. `prev` starts at zero. `f` and
+    `n_instruments` are independent: a Heston policy can read
+    `(spot, variance)` and still return a single weight in the spot, or
+    a weight in the spot and one in a variance swap.
+
+    Session 00's policies do not use this signature. They take the spot as
+    a vector of shape `(m,)`. `rollout` and `rollout_paths` are that
+    case.
+    """
+    feat = torch.as_tensor(features, dtype=torch.float32)
+    times = np.asarray(time, dtype=float)
+    m, n_plus, _f = feat.shape
+    n = n_plus - 1
+    prev = torch.zeros(m, n_instruments, dtype=feat.dtype)
+    chosen = []
+    for k in range(n):
+        prev = policy(float(times[k]), feat[:, k, :], prev)
+        if tuple(prev.shape) != (m, n_instruments):
+            raise ValueError(
+                f"policy returned shape {tuple(prev.shape)}, expected {(m, n_instruments)}"
+            )
+        chosen.append(prev)
+    return torch.stack(chosen, dim=1)
+
+
+def rollout_paths(policy: nn.Module, paths) -> np.ndarray:
+    """Spot-policy positions along a market path, shape (m, n).
+
+    Reads feature column 0 as the spot and calls `rollout_numpy`. That is
+    the Black-Scholes observation. A path with more than one feature should
+    go through `rollout_positions` and a policy that reads the whole row.
+    """
+    features = np.asarray(paths.features)
+    if features.ndim != 3 or features.shape[-1] != 1:
+        raise ValueError(
+            "rollout_paths reads a single feature, the spot. "
+            f"Got features of shape {features.shape}. Use rollout_positions."
+        )
+    maturity = float(np.asarray(paths.time)[-1])
+    return rollout_numpy(policy, features[:, :, 0], maturity)
 
 
 def position_grid(

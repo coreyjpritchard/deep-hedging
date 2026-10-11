@@ -1,4 +1,10 @@
-"""Market simulators. Paths have shape (m, n + 1) and include the t = 0 column."""
+"""Black-Scholes path simulator.
+
+Arrays here have shape (m, n + 1) and include the t = 0 column. The market
+interface that wraps these paths, prices the call and hedges it lives in
+`deephedge.env`. This module keeps the draw: one seeded Gaussian sample,
+exact on the log price, no time discretisation.
+"""
 
 from __future__ import annotations
 

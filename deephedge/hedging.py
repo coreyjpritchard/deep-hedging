@@ -1,14 +1,26 @@
 """Hedging P&L of a short European option.
 
-Convention. A hedger sells the option for `premium`, trades the underlying, and pays
-proportional costs. Positions are chosen at t_0, ..., t_{n-1}; position k is held over
-[t_k, t_{k+1}]. The hedger starts flat and liquidates at maturity, and every trade costs
-cost * |change in position| * S (Buehler, Gonon, Teichmann, Wood 2019, section 3).
+The P&L engine scores a position path. It does not know which volatility
+model produced the prices. Build an `Environment` from `deephedge.env`
+and call `env.pnl`, or call the functions here.
 
-    P&L = premium - payoff(S_T) + sum_k delta_k (S_{k+1} - S_k) - costs
+Convention. The hedger sells the option for `premium`, trades the
+instruments, and pays costs. Positions are chosen at `t_0, ..., t_{n-1}`;
+position k is held over `[t_k, t_{k+1}]`. The hedger starts flat and
+liquidates at maturity.
 
-With a nonzero rate r, pass discounted prices e^{-r t} S and a discounted payoff;
-`delta_hedge_pnl` does this for you.
+    P&L = premium - discount_T * payoff + gains - costs
+
+Gains are computed on discounted instrument prices, which folds in interest
+at a constant rate. `pnl_from_positions` is the one-instrument form: pass
+prices that are already discounted, and a payoff that is already multiplied
+by `discount_T`. `delta_hedge_pnl` builds a Black-Scholes environment
+and does that discounting for you.
+
+With one instrument and a proportional cost `c`, every trade costs
+`c * |change in position| * S`, including the opening and closing trades
+(Buehler, Gonon, Teichmann, Wood 2019, section 3). Several instruments are
+summed by `terminal_pnl`.
 """
 
 from __future__ import annotations
@@ -17,32 +29,27 @@ from collections.abc import Callable
 
 import numpy as np
 import torch
-from scipy.stats import norm
 
-from deephedge.markets import time_grid
+from deephedge.env import (
+    BlackScholes,
+    Environment,
+    Paths,
+    ProportionalCost,
+    bs_call_delta,
+    bs_call_price,
+    terminal_pnl,
+)
 
-
-def bs_call_price(S, K: float, tau, sigma: float, r: float = 0.0):
-    """Black-Scholes call price with time to maturity tau. Vectorised in S and tau."""
-    S = np.asarray(S, dtype=float)
-    tau = np.asarray(tau, dtype=float)
-    intrinsic = np.maximum(S - K, 0.0)
-    safe_tau = np.where(tau > 0, tau, 1.0)
-    sd = sigma * np.sqrt(safe_tau)
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * safe_tau) / sd
-    d2 = d1 - sd
-    price = S * norm.cdf(d1) - K * np.exp(-r * safe_tau) * norm.cdf(d2)
-    return np.where(tau > 0, price, intrinsic)
-
-
-def bs_call_delta(S, K: float, tau, sigma: float, r: float = 0.0):
-    """Black-Scholes call delta N(d1). At tau = 0 returns the indicator S > K."""
-    S = np.asarray(S, dtype=float)
-    tau = np.asarray(tau, dtype=float)
-    safe_tau = np.where(tau > 0, tau, 1.0)
-    sd = sigma * np.sqrt(safe_tau)
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * safe_tau) / sd
-    return np.where(tau > 0, norm.cdf(d1), (S > K).astype(float))
+__all__ = [
+    "bs_call_delta",
+    "bs_call_price",
+    "call_payoff",
+    "delta_hedge_pnl",
+    "delta_positions",
+    "pnl_from_positions",
+    "pnl_from_positions_torch",
+    "trading_costs",
+]
 
 
 def call_payoff(K: float) -> Callable:
@@ -56,9 +63,8 @@ def call_payoff(K: float) -> Callable:
 
 def trading_costs(paths: np.ndarray, positions: np.ndarray, cost: float) -> np.ndarray:
     """Total proportional cost per path, including the opening and liquidating trades."""
-    m = paths.shape[0]
-    full = np.concatenate([np.zeros((m, 1)), positions, np.zeros((m, 1))], axis=1)
-    return cost * (np.abs(np.diff(full, axis=1)) * paths).sum(axis=1)
+    paths = np.asarray(paths, dtype=float)
+    return ProportionalCost(float(cost)).amount(paths[:, :, None], positions)
 
 
 def pnl_from_positions(
@@ -70,15 +76,23 @@ def pnl_from_positions(
 ) -> np.ndarray:
     """Terminal P&L of a short option hedged with `positions`, shape (m, n).
 
-    `paths` are prices, shape (m, n + 1). `payoff` is a function of S_T or an array of
-    terminal payoffs, shape (m,). Every policy (delta, network, no hedge) goes through
-    this one function.
+    `paths` are prices of one instrument, shape (m, n + 1), already
+    discounted if interest is nonzero. `payoff` is a function of `S_T`
+    or an array of terminal payoffs, shape (m,), already in the same units
+    as `paths`. Every policy (delta, network, no hedge) can go through
+    this function. The multi-instrument form is `terminal_pnl`.
     """
     paths = np.asarray(paths, dtype=float)
     positions = np.asarray(positions, dtype=float)
     pay = payoff(paths[:, -1]) if callable(payoff) else np.asarray(payoff, dtype=float)
-    gains = (positions * np.diff(paths, axis=1)).sum(axis=1)
-    return premium - pay + gains - trading_costs(paths, positions, cost)
+    n = paths.shape[1] - 1
+    wrapped = Paths(
+        time=np.linspace(0.0, 1.0, n + 1),
+        instruments=paths[:, :, None],
+        features=paths[:, :, None],
+        discount=np.ones(n + 1),
+    )
+    return terminal_pnl(wrapped, positions, pay, cost, premium)
 
 
 def pnl_from_positions_torch(
@@ -88,7 +102,12 @@ def pnl_from_positions_torch(
     cost: float,
     premium: float = 0.0,
 ) -> torch.Tensor:
-    """Torch version of `pnl_from_positions`, differentiable in positions."""
+    """Torch version of `pnl_from_positions`, differentiable in positions.
+
+    One instrument and one proportional rate, matching `ProportionalCost`.
+    A second instrument (a variance swap under Heston) needs the same sum
+    over the instrument axis here, so the training loss stays the numpy P&L.
+    """
     pay = payoff(paths[:, -1]) if callable(payoff) else payoff
     gains = (positions * (paths[:, 1:] - paths[:, :-1])).sum(dim=1)
     zero = torch.zeros_like(paths[:, :1])
@@ -100,23 +119,24 @@ def pnl_from_positions_torch(
 def delta_positions(
     paths: np.ndarray, K: float, T: float, sigma: float, r: float = 0.0
 ) -> np.ndarray:
-    """Black-Scholes delta at t_0, ..., t_{n-1}, shape (m, n)."""
-    n = paths.shape[1] - 1
-    tau = T - time_grid(n, T)[:-1]
-    return bs_call_delta(paths[:, :-1], K, tau, sigma, r)
+    """Black-Scholes delta at t_0, ..., t_{n-1}, shape (m, n).
+
+    This is the spot column of `BlackScholes.benchmark_positions`.
+    """
+    paths = np.asarray(paths, dtype=float)
+    market = BlackScholes(s0=float(paths[0, 0]), strike=K, maturity=T, sigma=sigma, r=r)
+    return market.benchmark_positions(market.paths_from_spot(paths))[:, :, 0]
 
 
 def delta_hedge_pnl(
     paths: np.ndarray, K: float, T: float, sigma: float, r: float, cost: float
 ) -> np.ndarray:
-    """P&L of a short call sold at its Black-Scholes price and delta hedged at each step.
+    """P&L of a short call sold at its Black-Scholes price and delta hedged.
 
-    Amounts are discounted to t = 0. Returns shape (m,).
+    Amounts are discounted to t = 0. Returns shape (m,). The hedge is the
+    market's benchmark position, and the P&L is the environment's.
     """
     paths = np.asarray(paths, dtype=float)
-    n = paths.shape[1] - 1
-    discount = np.exp(-r * time_grid(n, T))
-    premium = float(bs_call_price(paths[0, 0], K, T, sigma, r))
-    positions = delta_positions(paths, K, T, sigma, r)
-    payoff = discount[-1] * np.maximum(paths[:, -1] - K, 0.0)
-    return pnl_from_positions(paths * discount, positions, payoff, cost, premium)
+    market = BlackScholes(s0=float(paths[0, 0]), strike=K, maturity=T, sigma=sigma, r=r)
+    sim = market.paths_from_spot(paths)
+    return Environment(market, cost).pnl(sim, market.benchmark_positions(sim))
