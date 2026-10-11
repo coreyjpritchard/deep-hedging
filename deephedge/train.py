@@ -457,6 +457,7 @@ COST_SESSION: dict[str, dict] = {
         "family": "fixed",
         "rate": 0.0,
         "fixed": 0.05,
+        "cost_width": 0.05,
         "impact": 0.0,
         "rates": None,
         "unit": None,
@@ -464,7 +465,7 @@ COST_SESSION: dict[str, dict] = {
         "kind": "mlp",
         "file": "s02_bs_fixed.pt",
         "m_train": 20_000,
-        "epochs": 100,
+        "epochs": 200,
         "width": 32,
         "depth": 2,
         "lam": 1.0,
@@ -571,6 +572,7 @@ def cost_model_from_spec(spec: dict, scale: float = 1.0):
             rate=float(spec["rate"]) * scale,
             fixed=float(spec["fixed"]) * scale,
             unit=spec["unit"],
+            width=float(spec.get("cost_width", 1e-2)),
         )
     if family == "quadratic":
         return QuadraticCost(float(spec["impact"]) * scale, spec["unit"])

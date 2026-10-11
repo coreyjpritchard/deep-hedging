@@ -34,8 +34,13 @@ Training calls `amount_torch(..., exact=False)`, which replaces the
 indicator by `tanh(|change| / width)`. That is 0 when the position does
 not change, near 1 once the change is several widths, and differentiable
 at 0. Evaluation goes through numpy and is exact. `width` is in position
-units. The default `1e-2` treats a trade of a few hundredths of a share
-as essentially a full fixed cost, and a numerical dust trade as free.
+units and does not enter the exact charge. The default `1e-2` treats
+a trade of a few hundredths of a share as essentially a full fixed
+cost, and a numerical dust trade as free.
+A daily Black-Scholes delta move is about that size, so a width of
+`1e-2` is already saturated there and the training step gets no
+gradient from the fixed cost. A run that has to learn whether to
+trade at all should pick a larger width. Session 02 uses `0.05`.
 """
 
 from __future__ import annotations
