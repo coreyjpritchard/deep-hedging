@@ -23,6 +23,27 @@ def entropic(pnl: np.ndarray, lam: float) -> float:
     return float((logsumexp(-lam * x) - math.log(x.size)) / lam)
 
 
+def mean_se(pnl: np.ndarray) -> float:
+    """Standard error of the sample mean, with the sample standard deviation."""
+    x = np.asarray(pnl, dtype=float)
+    return float(x.std(ddof=1) / math.sqrt(x.size))
+
+
+def entropic_se(pnl: np.ndarray, lam: float) -> float:
+    """Delta-method standard error of `entropic` on an i.i.d. sample.
+
+    Let Z = exp(-lam X) and m = E[Z]. Then rho = log(m) / lam, and
+    se(rho) = sd(Z) / (lam * m * sqrt(n)), with sd the sample standard
+    deviation. This is the sampling error of the mean of Z, pushed through
+    the logarithm. It is not a standard error across training seeds.
+    """
+    x = np.asarray(pnl, dtype=float)
+    z = np.exp(-lam * x)
+    mean_z = float(z.mean())
+    sd_z = float(z.std(ddof=1))
+    return sd_z / (lam * mean_z * math.sqrt(x.size))
+
+
 def cvar(pnl: np.ndarray, alpha: float) -> float:
     """Conditional value at risk of the loss -X at confidence level alpha.
 

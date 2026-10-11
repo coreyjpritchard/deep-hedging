@@ -23,7 +23,7 @@ from deephedge.env import (
 )
 from deephedge.hedging import call_payoff, pnl_from_positions_torch
 from deephedge.markets import to_torch
-from deephedge.policy import HestonPolicy, MLPPolicy, rollout, rollout_positions
+from deephedge.policy import GammaPolicy, HestonPolicy, MLPPolicy, rollout, rollout_positions
 from deephedge.risk import cvar_torch, entropic_torch
 
 WEIGHTS_DIR = Path(__file__).resolve().parent.parent / "data" / "weights"
@@ -389,6 +389,132 @@ def cached_heston_policy(setup: HestonSetup) -> tuple[HestonPolicy, HestonSetup]
 
 
 CACHED_COSTS = (0.0, 0.0025, 0.005, 0.01, 0.02)
+
+# Small-cost grids for the Whalley-Wilmott comparison. Session 00 already
+# caches n = 30 at 25, 50, 100 and 200 bp. These are the n = 120 runs.
+WW_SMALL_COSTS = (0.0005, 0.001, 0.0015, 0.0025)
+WW_N_STEPS = 120
+
+# Session 03. n = 30 reuses the session 00 weights. n = 120 is trained here.
+WW_COST_GRID = {
+    30: (0.0025, 0.005, 0.01, 0.02),
+    120: WW_SMALL_COSTS,
+}
+
+# Constant half-widths in shares, chosen on seed 0 with 20 000 paths by
+# minimising entropic risk on {0.02, 0.04, ..., 0.40}. They are not refit
+# on the seed-12345 batch that scores them. One tuned parameter. The
+# Whalley-Wilmott band has none.
+WW_FIXED_HALF_WIDTH = {
+    (30, 0.0025): 0.08,
+    (30, 0.005): 0.10,
+    (30, 0.01): 0.12,
+    (30, 0.02): 0.16,
+    (120, 0.0005): 0.04,
+    (120, 0.001): 0.06,
+    (120, 0.0015): 0.08,
+    (120, 0.0025): 0.10,
+}
+
+
+def ww_weights_path(n_steps: int, cost: float, kind: str = "mlp") -> Path:
+    """Cached weights for one Whalley-Wilmott comparison network."""
+    tag = f"n{n_steps:03d}_c{round(cost * 1e4):03d}bp"
+    stem = "s03" if kind == "mlp" else "s03g"
+    return WEIGHTS_DIR / f"{stem}_{tag}.pt"
+
+
+def save_ww_policy(policy, setup: Setup, path: Path, wall_time: float, kind: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    state = {k: v.detach().clone() for k, v in policy.state_dict().items()}
+    torch.save(
+        {
+            "state_dict": state,
+            "config": policy.config(),
+            "setup": asdict(setup),
+            "wall_time": wall_time,
+            "kind": kind,
+        },
+        path,
+    )
+
+
+def load_ww_comparison_policy(n_steps: int, cost: float, kind: str = "mlp"):
+    """The network scored in session 03.
+
+    `kind="mlp"` at `n_steps=30` is the session 00 cache. Anything else is
+    a file from `ww_weights_path`.
+    """
+    if kind not in ("mlp", "gamma"):
+        raise ValueError(f"kind must be mlp or gamma, got {kind}")
+    if kind == "mlp" and n_steps == DEFAULT.n_steps:
+        setup = replace(DEFAULT, n_steps=n_steps, cost=cost, lam=DEFAULT.lam)
+        policy, trained = cached_policy(setup)
+        if (
+            trained.n_steps != n_steps
+            or abs(trained.cost - cost) > 1e-12
+            or abs(trained.lam - DEFAULT.lam) > 1e-12
+        ):
+            raise FileNotFoundError(
+                f"no session 00 weights for n={n_steps}, cost={cost}, lambda={DEFAULT.lam}"
+            )
+        return policy, trained
+    return load_ww_policy(ww_weights_path(n_steps, cost, kind=kind))
+
+
+def load_ww_policy(path: Path):
+    """A session-00 MLP or a gamma-feature network, and the setup it was trained for."""
+    blob = torch.load(path, map_location="cpu", weights_only=True)
+    if blob.get("kind") == "gamma":
+        policy = GammaPolicy(**blob["config"])
+    else:
+        policy = MLPPolicy(**blob["config"])
+    policy.load_state_dict(blob["state_dict"])
+    policy.eval()
+    return policy, Setup(**blob["setup"])
+
+
+def train_ww_network(n_steps: int, cost: float, kind: str = "mlp") -> TrainResult:
+    """Train one proportional-cost Black-Scholes network. Same budget as session 00."""
+    setup = replace(DEFAULT, n_steps=n_steps, cost=cost)
+    market = setup.market()
+    paths = market.simulate(setup.m_train, setup.n_steps, setup.seed)
+    torch.manual_seed(setup.seed)
+    if kind == "gamma":
+        policy = GammaPolicy(
+            setup.strike, setup.maturity, setup.sigma, setup.r, setup.width, setup.depth
+        )
+    elif kind == "mlp":
+        policy = MLPPolicy(setup.strike, setup.maturity, setup.width, setup.depth)
+    else:
+        raise ValueError(f"kind must be mlp or gamma, got {kind}")
+    return train(
+        policy,
+        to_torch(paths.spot),
+        call_payoff(setup.strike),
+        lambda pnl, lam=setup.lam: entropic_torch(pnl, lam),
+        setup.cost,
+        setup.epochs,
+        setup.lr,
+        setup.seed,
+        premium=market.premium(),
+        batch_size=setup.batch_size,
+    )
+
+
+def train_ww_caches() -> None:
+    """Train the n = 120 networks. Does not touch session 00 or 01 weights."""
+    torch.set_num_threads(4)
+    for cost in WW_SMALL_COSTS:
+        result = train_ww_network(WW_N_STEPS, cost, kind="mlp")
+        path = ww_weights_path(WW_N_STEPS, cost, kind="mlp")
+        setup = replace(DEFAULT, n_steps=WW_N_STEPS, cost=cost)
+        save_ww_policy(result.policy, setup, path, result.wall_time, "mlp")
+        print(
+            f"mlp n={WW_N_STEPS} c={cost}: {result.wall_time:.1f} s, "
+            f"{result.history[0]:.4f} -> {result.history[-1]:.4f}, saved {path.name}",
+            flush=True,
+        )
 
 
 def cached_policy(setup: Setup) -> tuple[MLPPolicy, Setup]:
