@@ -23,7 +23,7 @@ from deephedge.env import (
 )
 from deephedge.hedging import call_payoff, pnl_from_positions_torch
 from deephedge.markets import to_torch
-from deephedge.policy import HestonPolicy, MLPPolicy, rollout, rollout_positions
+from deephedge.policy import GammaPolicy, HestonPolicy, MLPPolicy, rollout, rollout_positions
 from deephedge.risk import cvar_torch, entropic_torch
 
 WEIGHTS_DIR = Path(__file__).resolve().parent.parent / "data" / "weights"
@@ -389,6 +389,88 @@ def cached_heston_policy(setup: HestonSetup) -> tuple[HestonPolicy, HestonSetup]
 
 
 CACHED_COSTS = (0.0, 0.0025, 0.005, 0.01, 0.02)
+
+# Small-cost grids for the Whalley-Wilmott comparison. Session 00 already
+# caches n = 30 at 25, 50, 100 and 200 bp. These are the n = 120 runs.
+WW_SMALL_COSTS = (0.0005, 0.001, 0.0015, 0.0025)
+WW_N_STEPS = 120
+
+
+def ww_weights_path(n_steps: int, cost: float, kind: str = "mlp") -> Path:
+    """Cached weights for one Whalley-Wilmott comparison network."""
+    tag = f"n{n_steps:03d}_c{round(cost * 1e4):03d}bp"
+    stem = "s03" if kind == "mlp" else "s03g"
+    return WEIGHTS_DIR / f"{stem}_{tag}.pt"
+
+
+def save_ww_policy(policy, setup: Setup, path: Path, wall_time: float, kind: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    state = {k: v.detach().clone() for k, v in policy.state_dict().items()}
+    torch.save(
+        {
+            "state_dict": state,
+            "config": policy.config(),
+            "setup": asdict(setup),
+            "wall_time": wall_time,
+            "kind": kind,
+        },
+        path,
+    )
+
+
+def load_ww_policy(path: Path):
+    """A session-00 MLP or a gamma-feature network, and the setup it was trained for."""
+    blob = torch.load(path, map_location="cpu", weights_only=True)
+    if blob.get("kind") == "gamma":
+        policy = GammaPolicy(**blob["config"])
+    else:
+        policy = MLPPolicy(**blob["config"])
+    policy.load_state_dict(blob["state_dict"])
+    policy.eval()
+    return policy, Setup(**blob["setup"])
+
+
+def train_ww_network(n_steps: int, cost: float, kind: str = "mlp") -> TrainResult:
+    """Train one proportional-cost Black-Scholes network. Same budget as session 00."""
+    setup = replace(DEFAULT, n_steps=n_steps, cost=cost)
+    market = setup.market()
+    paths = market.simulate(setup.m_train, setup.n_steps, setup.seed)
+    torch.manual_seed(setup.seed)
+    if kind == "gamma":
+        policy = GammaPolicy(
+            setup.strike, setup.maturity, setup.sigma, setup.r, setup.width, setup.depth
+        )
+    elif kind == "mlp":
+        policy = MLPPolicy(setup.strike, setup.maturity, setup.width, setup.depth)
+    else:
+        raise ValueError(f"kind must be mlp or gamma, got {kind}")
+    return train(
+        policy,
+        to_torch(paths.spot),
+        call_payoff(setup.strike),
+        lambda pnl, lam=setup.lam: entropic_torch(pnl, lam),
+        setup.cost,
+        setup.epochs,
+        setup.lr,
+        setup.seed,
+        premium=market.premium(),
+        batch_size=setup.batch_size,
+    )
+
+
+def train_ww_caches() -> None:
+    """Train the n = 120 networks. Does not touch session 00 or 01 weights."""
+    torch.set_num_threads(4)
+    for cost in WW_SMALL_COSTS:
+        result = train_ww_network(WW_N_STEPS, cost, kind="mlp")
+        path = ww_weights_path(WW_N_STEPS, cost, kind="mlp")
+        setup = replace(DEFAULT, n_steps=WW_N_STEPS, cost=cost)
+        save_ww_policy(result.policy, setup, path, result.wall_time, "mlp")
+        print(
+            f"mlp n={WW_N_STEPS} c={cost}: {result.wall_time:.1f} s, "
+            f"{result.history[0]:.4f} -> {result.history[-1]:.4f}, saved {path.name}",
+            flush=True,
+        )
 
 
 def cached_policy(setup: Setup) -> tuple[MLPPolicy, Setup]:
