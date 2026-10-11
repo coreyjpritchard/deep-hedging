@@ -14,7 +14,13 @@ import numpy as np
 import torch
 from torch import nn
 
-from deephedge.env import BlackScholes, Environment, ProportionalCost
+from deephedge.env import (
+    BlackScholes,
+    Environment,
+    FixedPlusProportional,
+    ProportionalCost,
+    QuadraticCost,
+)
 from deephedge.hedging import call_payoff, pnl_from_positions_torch
 from deephedge.markets import to_torch
 from deephedge.policy import HestonPolicy, MLPPolicy, rollout, rollout_positions
@@ -98,7 +104,9 @@ def train(
     """Minimise risk_fn(P&L) over the policy weights with Adam on minibatches of paths.
 
     The P&L is simulated in torch exactly as `pnl_from_positions` does in numpy, so the
-    gradient flows through every trade and every cost. `history` holds the full-sample
+    gradient flows through every trade and every cost. A plain rate ignores `exact`.
+    A cost model is trained on its smooth surrogate (`exact=False`); the number
+    recorded in `history` is the exact charge. `history` holds the full-sample
     objective after each epoch.
     """
     torch.manual_seed(seed)
@@ -114,7 +122,9 @@ def train(
         for i in range(0, m, batch_size):
             batch = paths_tensor[order[i : i + batch_size]]
             positions = rollout(policy, batch, T)
-            pnl = pnl_from_positions_torch(batch, positions, payoff_fn, cost, premium)
+            pnl = pnl_from_positions_torch(
+                batch, positions, payoff_fn, cost, premium, exact=False
+            )
             loss = risk_fn(pnl)
             optimiser.zero_grad()
             loss.backward()
@@ -135,7 +145,9 @@ def objective(
     """risk_fn of the policy's P&L on the given paths, without gradients."""
     with torch.no_grad():
         positions = rollout(policy, paths_tensor, policy.maturity)
-        pnl = pnl_from_positions_torch(paths_tensor, positions, payoff_fn, cost, premium)
+        pnl = pnl_from_positions_torch(
+            paths_tensor, positions, payoff_fn, cost, premium, exact=True
+        )
         return float(risk_fn(pnl))
 
 
@@ -266,7 +278,11 @@ def train_book(
 
     `prices` are already discounted, shape `(m, n + 1, d)`. `payoff` is
     already multiplied by the maturity discount, shape `(m,)`. `features`
-    has shape `(m, n + 1, f)`.
+    has shape `(m, n + 1, f)`. `cost` is a rate or a cost model.
+
+    The training step uses the smooth fixed-cost surrogate (`exact=False`).
+    The recorded objective uses the exact charge, which is what evaluation
+    reports. A proportional cost has no surrogate, so the two agree.
     """
     torch.manual_seed(seed)
     generator = torch.Generator().manual_seed(seed)
@@ -281,7 +297,7 @@ def train_book(
             idx = order[i : i + batch_size]
             positions = rollout_positions(policy, features[idx], times, n_instruments)
             pnl = pnl_from_positions_torch(
-                prices[idx], positions, payoff[idx], cost, premium
+                prices[idx], positions, payoff[idx], cost, premium, exact=False
             )
             loss = risk_fn(pnl)
             optimiser.zero_grad()
@@ -297,7 +313,7 @@ def train_book(
 def _book_objective(policy, prices, features, times, payoff, risk_fn, cost, premium) -> float:
     with torch.no_grad():
         positions = rollout_positions(policy, features, times, prices.shape[-1])
-        pnl = pnl_from_positions_torch(prices, positions, payoff, cost, premium)
+        pnl = pnl_from_positions_torch(prices, positions, payoff, cost, premium, exact=True)
         return float(risk_fn(pnl))
 
 
@@ -381,6 +397,298 @@ def cached_policy(setup: Setup) -> tuple[MLPPolicy, Setup]:
     if not path.exists():
         path = cached_weights_path(DEFAULT)
     return load_policy(path)
+
+
+COST_SESSION: dict[str, dict] = {
+    "bs-zero": {
+        "key": "bs-zero",
+        "market": "bs",
+        "label": "No cost",
+        "family": "proportional",
+        "rate": 0.0,
+        "fixed": 0.0,
+        "impact": 0.0,
+        "rates": None,
+        "unit": None,
+        "weights": "s00",
+        "kind": "mlp",
+        "file": None,
+        "m_train": 20_000,
+        "epochs": 100,
+        "width": 32,
+        "depth": 2,
+        "lam": 1.0,
+        "alpha": 0.95,
+        "n_steps": 30,
+        "lr": 0.005,
+        "batch_size": 2_000,
+        "seed": 0,
+        "varswap_scale": 100.0,
+    },
+    "bs-prop": {
+        "key": "bs-prop",
+        "market": "bs",
+        "label": "Proportional, 50 bp",
+        "family": "proportional",
+        "rate": 0.005,
+        "fixed": 0.0,
+        "impact": 0.0,
+        "rates": None,
+        "unit": None,
+        "weights": "s00",
+        "kind": "mlp",
+        "file": None,
+        "m_train": 20_000,
+        "epochs": 100,
+        "width": 32,
+        "depth": 2,
+        "lam": 1.0,
+        "alpha": 0.95,
+        "n_steps": 30,
+        "lr": 0.005,
+        "batch_size": 2_000,
+        "seed": 0,
+        "varswap_scale": 100.0,
+    },
+    "bs-fixed": {
+        "key": "bs-fixed",
+        "market": "bs",
+        "label": "Fixed, 0.05 per trade",
+        "family": "fixed",
+        "rate": 0.0,
+        "fixed": 0.05,
+        "impact": 0.0,
+        "rates": None,
+        "unit": None,
+        "weights": "s02",
+        "kind": "mlp",
+        "file": "s02_bs_fixed.pt",
+        "m_train": 20_000,
+        "epochs": 100,
+        "width": 32,
+        "depth": 2,
+        "lam": 1.0,
+        "alpha": 0.95,
+        "n_steps": 30,
+        "lr": 0.005,
+        "batch_size": 2_000,
+        "seed": 0,
+        "varswap_scale": 100.0,
+    },
+    "bs-quad": {
+        "key": "bs-quad",
+        "market": "bs",
+        "label": "Quadratic, impact 0.02",
+        "family": "quadratic",
+        "rate": 0.0,
+        "fixed": 0.0,
+        "impact": 0.02,
+        "rates": None,
+        "unit": None,
+        "weights": "s02",
+        "kind": "mlp",
+        "file": "s02_bs_quad.pt",
+        "m_train": 20_000,
+        "epochs": 100,
+        "width": 32,
+        "depth": 2,
+        "lam": 1.0,
+        "alpha": 0.95,
+        "n_steps": 30,
+        "lr": 0.005,
+        "batch_size": 2_000,
+        "seed": 0,
+        "varswap_scale": 100.0,
+    },
+    "heston-mark": {
+        "key": "heston-mark",
+        "market": "heston",
+        "label": "50 bp on each price",
+        "family": "proportional",
+        "rate": 0.0,
+        "fixed": 0.0,
+        "impact": 0.0,
+        "rates": (0.005, 0.005),
+        "unit": None,
+        "weights": "s02",
+        "kind": "heston",
+        "file": "s02_heston_mark.pt",
+        "m_train": 8_000,
+        "epochs": 50,
+        "width": 32,
+        "depth": 2,
+        "lam": 1.0,
+        "alpha": 0.5,
+        "n_steps": 30,
+        "lr": 0.005,
+        "batch_size": 2_000,
+        "seed": 0,
+        "varswap_scale": 100.0,
+    },
+    "heston-unit": {
+        "key": "heston-unit",
+        "market": "heston",
+        "label": "50 bp on the spot, 0.002 per swap",
+        "family": "proportional",
+        "rate": 0.0,
+        "fixed": 0.0,
+        "impact": 0.0,
+        "rates": (0.005, 0.002),
+        "unit": (None, 1.0),
+        "weights": "s02",
+        "kind": "heston",
+        "file": "s02_heston_unit.pt",
+        "m_train": 8_000,
+        "epochs": 50,
+        "width": 32,
+        "depth": 2,
+        "lam": 1.0,
+        "alpha": 0.5,
+        "n_steps": 30,
+        "lr": 0.005,
+        "batch_size": 2_000,
+        "seed": 0,
+        "varswap_scale": 100.0,
+    },
+}
+
+
+def cost_model_from_spec(spec: dict, scale: float = 1.0):
+    """The cost model a session-02 entry trains and scores at.
+
+    `scale` multiplies rates, the fixed charge and the impact. The unit
+    is not scaled: it is a notional, not a price of trading.
+    """
+    scale = float(scale)
+    family = spec["family"]
+    if family == "proportional":
+        if spec["rates"] is None:
+            return ProportionalCost(float(spec["rate"]) * scale, spec["unit"])
+        rates = tuple(float(r) * scale for r in spec["rates"])
+        return ProportionalCost(rates, spec["unit"])
+    if family == "fixed":
+        return FixedPlusProportional(
+            rate=float(spec["rate"]) * scale,
+            fixed=float(spec["fixed"]) * scale,
+            unit=spec["unit"],
+        )
+    if family == "quadratic":
+        return QuadraticCost(float(spec["impact"]) * scale, spec["unit"])
+    raise KeyError(family)
+
+
+def cost_session_market(market_name: str):
+    """Black-Scholes or Heston at the session defaults. `market_name` is `bs` or `heston`."""
+    if market_name == "bs":
+        return BlackScholes()
+    if market_name == "heston":
+        from deephedge.heston import Heston
+
+        return Heston()
+    raise KeyError(market_name)
+
+
+def train_cost_session(key: str) -> TrainResult:
+    """Train one session-02 network. Session-00 keys retrain the proportional cache."""
+    spec = COST_SESSION[key]
+    if spec["weights"] == "s00":
+        return train_setup(replace(DEFAULT, cost=float(spec["rate"])))
+    model = cost_model_from_spec(spec)
+    if spec["market"] == "bs":
+        market = cost_session_market("bs")
+        paths = market.simulate(spec["m_train"], spec["n_steps"], spec["seed"])
+        torch.manual_seed(spec["seed"])
+        policy = MLPPolicy(market.strike, market.maturity, spec["width"], spec["depth"])
+        return train(
+            policy,
+            to_torch(paths.spot),
+            call_payoff(market.strike),
+            lambda pnl, lam=spec["lam"]: entropic_torch(pnl, lam),
+            model,
+            spec["epochs"],
+            spec["lr"],
+            spec["seed"],
+            premium=market.premium(),
+            batch_size=spec["batch_size"],
+        )
+    market = cost_session_market("heston")
+    paths = market.simulate(spec["m_train"], spec["n_steps"], spec["seed"])
+    prices = torch.as_tensor(paths.discounted_instruments(), dtype=torch.float32)
+    features = torch.as_tensor(paths.features, dtype=torch.float32)
+    terminal = np.asarray(paths.discount_terminal(), dtype=np.float32)
+    payoff = torch.as_tensor(market.payoff(paths), dtype=torch.float32) * torch.as_tensor(terminal)
+    torch.manual_seed(spec["seed"])
+    policy = HestonPolicy(
+        market.strike,
+        market.maturity,
+        market.theta,
+        width=spec["width"],
+        depth=spec["depth"],
+        varswap_scale=spec["varswap_scale"],
+    )
+    return train_book(
+        policy,
+        prices,
+        features,
+        paths.time,
+        payoff,
+        lambda pnl, alpha=spec["alpha"]: cvar_torch(pnl, alpha),
+        model,
+        spec["epochs"],
+        spec["lr"],
+        spec["seed"],
+        premium=market.premium(),
+        batch_size=spec["batch_size"],
+    )
+
+
+def save_cost_session(policy: nn.Module, spec: dict, path: Path, wall_time: float = 0.0) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    state = {k: v.detach().clone() for k, v in policy.state_dict().items()}
+    torch.save(
+        {
+            "state_dict": state,
+            "config": policy.config(),
+            "kind": spec["kind"],
+            "spec": spec,
+            "wall_time": wall_time,
+        },
+        path,
+    )
+
+
+def load_cost_session_policy(key: str):
+    """Cached network for a session-02 key, and the spec it was trained for."""
+    spec = COST_SESSION[key]
+    if spec["weights"] == "s00":
+        policy, _setup = cached_policy(replace(DEFAULT, cost=float(spec["rate"])))
+        policy.eval()
+        return policy, spec
+    path = WEIGHTS_DIR / spec["file"]
+    blob = torch.load(path, map_location="cpu", weights_only=True)
+    if blob["kind"] == "mlp":
+        policy = MLPPolicy(**blob["config"])
+    else:
+        policy = HestonPolicy(**blob["config"])
+    policy.load_state_dict(blob["state_dict"])
+    policy.eval()
+    return policy, spec
+
+
+def train_cost_session_caches() -> None:
+    """Train and save the four session-02 networks. Does not touch session 00 or 01."""
+    torch.set_num_threads(4)
+    for key, spec in COST_SESSION.items():
+        if spec["weights"] != "s02":
+            continue
+        result = train_cost_session(key)
+        path = WEIGHTS_DIR / spec["file"]
+        save_cost_session(result.policy, spec, path, result.wall_time)
+        print(
+            f"{key}: {result.wall_time:.1f} s, objective "
+            f"{result.history[0]:.4f} -> {result.history[-1]:.4f}, saved {path.name}",
+            flush=True,
+        )
 
 
 def main() -> None:
