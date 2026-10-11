@@ -395,6 +395,27 @@ CACHED_COSTS = (0.0, 0.0025, 0.005, 0.01, 0.02)
 WW_SMALL_COSTS = (0.0005, 0.001, 0.0015, 0.0025)
 WW_N_STEPS = 120
 
+# Session 03. n = 30 reuses the session 00 weights. n = 120 is trained here.
+WW_COST_GRID = {
+    30: (0.0025, 0.005, 0.01, 0.02),
+    120: WW_SMALL_COSTS,
+}
+
+# Constant half-widths in shares, chosen on seed 0 with 20 000 paths by
+# minimising entropic risk on {0.02, 0.04, ..., 0.40}. They are not refit
+# on the seed-12345 batch that scores them. One tuned parameter. The
+# Whalley-Wilmott band has none.
+WW_FIXED_HALF_WIDTH = {
+    (30, 0.0025): 0.08,
+    (30, 0.005): 0.10,
+    (30, 0.01): 0.12,
+    (30, 0.02): 0.16,
+    (120, 0.0005): 0.04,
+    (120, 0.001): 0.06,
+    (120, 0.0015): 0.08,
+    (120, 0.0025): 0.10,
+}
+
 
 def ww_weights_path(n_steps: int, cost: float, kind: str = "mlp") -> Path:
     """Cached weights for one Whalley-Wilmott comparison network."""
@@ -416,6 +437,29 @@ def save_ww_policy(policy, setup: Setup, path: Path, wall_time: float, kind: str
         },
         path,
     )
+
+
+def load_ww_comparison_policy(n_steps: int, cost: float, kind: str = "mlp"):
+    """The network scored in session 03.
+
+    `kind="mlp"` at `n_steps=30` is the session 00 cache. Anything else is
+    a file from `ww_weights_path`.
+    """
+    if kind not in ("mlp", "gamma"):
+        raise ValueError(f"kind must be mlp or gamma, got {kind}")
+    if kind == "mlp" and n_steps == DEFAULT.n_steps:
+        setup = replace(DEFAULT, n_steps=n_steps, cost=cost, lam=DEFAULT.lam)
+        policy, trained = cached_policy(setup)
+        if (
+            trained.n_steps != n_steps
+            or abs(trained.cost - cost) > 1e-12
+            or abs(trained.lam - DEFAULT.lam) > 1e-12
+        ):
+            raise FileNotFoundError(
+                f"no session 00 weights for n={n_steps}, cost={cost}, lambda={DEFAULT.lam}"
+            )
+        return policy, trained
+    return load_ww_policy(ww_weights_path(n_steps, cost, kind=kind))
 
 
 def load_ww_policy(path: Path):

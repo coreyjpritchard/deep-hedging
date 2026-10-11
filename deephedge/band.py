@@ -49,18 +49,22 @@ from collections.abc import Callable
 import numpy as np
 from scipy.stats import norm
 
-from deephedge.env import bs_call_delta
-from deephedge.policy import position_grid
+from deephedge.env import Environment, ProportionalCost, bs_call_delta
+from deephedge.policy import position_grid, rollout_numpy
 from deephedge.risk import entropic, entropic_se, mean_se
 
 __all__ = [
     "band_positions",
     "bs_call_gamma",
+    "choose_fixed_half_width",
     "cloud_half_width",
     "describe_rule",
     "fit_power_exponent",
+    "network_positions",
+    "score_hedgers",
     "score_pnl",
     "whalley_wilmott_half_width",
+    "ww_positions",
 ]
 
 
@@ -138,6 +142,90 @@ def band_positions(
         held = np.clip(held, delta - width, delta + width)
         out[:, k] = held
     return out
+
+
+def choose_fixed_half_width(
+    env: Environment,
+    paths,
+    lam: float,
+    grid: np.ndarray | None = None,
+) -> tuple[float, float]:
+    """Constant half-width minimising entropic risk of `env` on `paths`.
+
+    `paths` is a `Paths` batch. The market must be Black-Scholes, so the
+    band is around that market's delta. Returns the width and the entropic
+    risk on this batch. Evaluate the width on a different seed.
+    """
+    if grid is None:
+        grid = np.round(np.arange(0.02, 0.42, 0.02), 2)
+    market = env.market
+    spot = paths.spot
+    best_w = float(grid[0])
+    best_risk = np.inf
+    for width in grid:
+        positions = band_positions(
+            spot, paths.time, market.strike, market.sigma, market.r, float(width)
+        )
+        risk = entropic(env.pnl(paths, positions), lam)
+        if risk < best_risk:
+            best_risk = float(risk)
+            best_w = float(width)
+    return best_w, best_risk
+
+
+def ww_positions(market, paths, cost: float, risk_aversion: float) -> np.ndarray:
+    """Edge-trading Whalley-Wilmott hedge. Shape `(m, n)`."""
+
+    def width(spot, tau):
+        return whalley_wilmott_half_width(
+            spot, tau, cost, risk_aversion, market.strike, market.sigma, market.r
+        )
+
+    return band_positions(paths.spot, paths.time, market.strike, market.sigma, market.r, width)
+
+
+def network_positions(policy, paths) -> np.ndarray:
+    """Spot-network positions, shape `(m, n)`."""
+    return rollout_numpy(policy, paths.spot, float(paths.time[-1]))
+
+
+def score_hedgers(
+    market,
+    paths,
+    cost: float,
+    risk_aversion: float,
+    policies: dict,
+    fixed_half_width: float,
+) -> tuple[dict[str, dict[str, float]], dict[str, np.ndarray]]:
+    """Mean P&L and entropic risk for delta, the asymptotic band, and the rest.
+
+    `policies` maps a name to a spot network. Those names must not be
+    `delta`, `ww`, or `fixed`. The fixed band uses `fixed_half_width` in
+    shares, the same at every spot and date. Every book is charged
+    `ProportionalCost(cost)`, including liquidation. Returns the scores
+    and the position arrays.
+    """
+    reserved = {"delta", "ww", "fixed"}
+    overlap = reserved.intersection(policies)
+    if overlap:
+        raise ValueError(f"policy names clash with built-in hedgers: {sorted(overlap)}")
+    env = Environment(market, ProportionalCost(float(cost)))
+    books: dict[str, np.ndarray] = {
+        "delta": market.benchmark_positions(paths),
+        "ww": ww_positions(market, paths, cost, risk_aversion),
+        "fixed": band_positions(
+            paths.spot,
+            paths.time,
+            market.strike,
+            market.sigma,
+            market.r,
+            float(fixed_half_width),
+        ),
+    }
+    for name, policy in policies.items():
+        books[name] = network_positions(policy, paths)
+    scores = {name: score_pnl(env.pnl(paths, pos), risk_aversion) for name, pos in books.items()}
+    return scores, books
 
 
 def score_pnl(pnl: np.ndarray, lam: float) -> dict[str, float]:

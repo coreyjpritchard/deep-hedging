@@ -14,9 +14,10 @@ from deephedge.band import (
     bs_call_gamma,
     describe_rule,
     fit_power_exponent,
+    score_hedgers,
     whalley_wilmott_half_width,
 )
-from deephedge.env import bs_call_delta
+from deephedge.env import BlackScholes, bs_call_delta
 from deephedge.policy import GammaPolicy
 from deephedge.risk import entropic, entropic_se, mean_se
 
@@ -98,6 +99,15 @@ def test_describe_rule_recovers_a_sharp_band():
     assert rule["no_trade_half_width"] == pytest.approx(0.2, abs=0.02)
     assert rule["sharp_half_width"] == pytest.approx(0.2, abs=0.02)
     assert rule["slope"] == pytest.approx(1.0, abs=0.05)
+
+
+def test_score_hedgers_names_the_three_bands():
+    market = BlackScholes()
+    paths = market.simulate(32, 4, seed=0)
+    scores, books = score_hedgers(market, paths, 0.005, 1.0, {}, 0.1)
+    assert set(scores) == {"delta", "ww", "fixed"}
+    assert books["ww"].shape == (32, 4)
+    assert scores["delta"]["n"] == 32
 
 
 def test_gamma_policy_returns_a_position():

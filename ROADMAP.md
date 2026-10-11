@@ -12,7 +12,9 @@ The session ladder. Levels are defined in `CLAUDE.md`: 0 play, 1 reproduce,
   the original.
 - [ ] **02 The Whalley-Wilmott band** (level 2). Implement the asymptotic band of Whalley
   and Wilmott (1997) analytically and put it on the same axes as the learned band,
-  across spots, times and costs.
+  across spots, times and costs. The picture is `sessions/03_whalley_wilmott.py`.
+  File `sessions/02_cost_models.py` is the cost-model picture, so this session is
+  numbered 03.
 - [ ] **03 Recurrent policy and path-dependent features** (level 2). Replace the
   feature-based network by a recurrent one and add path features. Check that nothing
   changes in a Markov market and that something does in a path-dependent one.

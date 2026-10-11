@@ -18,6 +18,7 @@ decision rule for three starting positions.
 | 00 | Why does delta hedging lose money when trading costs money, and what does a network do instead? | `sessions/00_cost_of_hedging.py`, static copy in [`docs/00_cost_of_hedging.html`](docs/00_cost_of_hedging.html) |
 | 01 | In the 2019 Heston market, does a network match the model hedge once a variance swap is traded? | `sessions/01_heston_deep_hedge.py`, static copy in [`docs/01_heston_deep_hedge.html`](docs/01_heston_deep_hedge.html) |
 | 02 | How does the learned hedge change when the cost model changes? | `sessions/02_cost_models.py`, static copy in [`docs/02_cost_models.html`](docs/02_cost_models.html) |
+| 03 | Does the learned band match the Whalley-Wilmott band? | `sessions/03_whalley_wilmott.py`, static copy in [`docs/03_whalley_wilmott.html`](docs/03_whalley_wilmott.html) |
 
 Findings from session 00, on 20 000 fresh paths with a 50 bp cost:
 
@@ -26,9 +27,8 @@ Findings from session 00, on 20 000 fresh paths with a 50 bp cost:
 - With cost 100 bp, going from 10 to 120 rehedges takes delta hedging's mean P&L from
   -1.96 to -4.48, close to the square-root-of-n law. The network loses far less.
 - The learned band is softer than the Whalley-Wilmott band, barely widens between 50
-  and 200 bp, and sits above delta. That comparison is the next research session
-  on the roadmap. File `sessions/02_cost_models.py` is the cost-model picture, not
-  that question.
+  and 200 bp, and sits above delta. Session 03 measures that comparison.
+  File `sessions/02_cost_models.py` is the cost-model picture, not that question.
 
 Findings from session 01, on 20 000 fresh Heston paths at zero cost (seed 12345). The
 call is sold at the quadrature price 1.692. The paper prints 1.69 and, for the same
@@ -53,6 +53,23 @@ than session 01.
 - On Heston, 50 bp on the swap's mark leaves the network holding mean absolute
   swap weight 232. Charging 0.002 per contract, it holds 0.005. The model hedge,
   which keeps the swap, has mean P&L -7.34 under that charge.
+
+Findings from session 03, seed 12345, 20 000 Black-Scholes paths, proportional
+cost only, entropic risk at lambda 1. Roadmap item 02. The 30-step network is
+the session 00 one.
+
+- The cloud of holdings near the money has the gamma shape (correlation about
+  0.99 across spot at 50 bp) and about half the Whalley-Wilmott width.
+- Its cost exponent is 0.293 at 120 steps and 5 to 25 bp (bootstrap standard
+  error 0.007; lack-of-fit standard error 0.028). At 30 steps and 25 to 200 bp
+  the exponent is 0.063 (bootstrap standard error 0.006). The analytic exponent
+  is 1/3.
+- At 5 bp the asymptotic band and a tuned constant width tie, near entropic
+  risk 0.165, and both beat the network (0.175) and delta (0.244). At 200 bp
+  the network (3.35) beats the constant band (3.72) and the asymptotic band
+  (4.37). Delta is 6.83.
+- Adding gamma as a feature does not sharpen the rule or move these numbers.
+  The previous position was already an input.
 
 The plan is in [ROADMAP.md](ROADMAP.md) and dated notes are in [LOG.md](LOG.md).
 
@@ -101,6 +118,7 @@ pip install -e ".[dev]"                       # once
 marimo run sessions/00_cost_of_hedging.py     # session 00; marimo edit to see the code
 marimo run sessions/01_heston_deep_hedge.py   # session 01, the 2019 Heston figure
 marimo run sessions/02_cost_models.py         # session 02, cost models and the swap unit
+marimo run sessions/03_whalley_wilmott.py     # session 03, the Whalley-Wilmott band
 pytest -m "not slow"                          # tests, a few seconds
 python -m deephedge.train                     # retrain the cached weights, about 3 minutes
 python -m deephedge.figures                   # redraw the README figure
@@ -124,8 +142,10 @@ on four cores.
   The Black-Scholes price and delta are re-exported from `deephedge.env`.
 - `deephedge/risk.py` entropic risk and CVaR, numpy and torch. They take a P&L sample
   and nothing about the market.
-- `deephedge/policy.py` the feature-based network, the Heston network, a delta policy,
-  and rollouts.
+- `deephedge/band.py` the Whalley-Wilmott half-width, the edge-trading rule, and
+  the cloud and power-law summaries used in session 03.
+- `deephedge/policy.py` the feature-based network, a gamma-feature variant, the
+  Heston network, a delta policy, and rollouts.
 - `deephedge/train.py` end-to-end training and the cached settings of sessions 00, 01 and 02.
 - `tests/` checks against closed forms and known rates; `pytest --impl=exercises` runs
   them against Corey's own implementations in `exercises/`.
