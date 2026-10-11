@@ -17,19 +17,23 @@ Black-Scholes has `d = 1`, the spot, and `f = 1`, the same spot. The
 benchmark hedge is the analytic call delta. The premium is the analytic
 call price.
 
+Heston is `deephedge.heston.Heston`. Features are `(spot, variance)`,
+so `f = 2`. Instruments are the spot and a variance swap, so `d = 2`.
+The swap's price belongs in `instruments`; the variance factor stays in
+`features`, because a feature is not something the P&L can trade. The
+benchmark hedge has one weight per instrument.
+
 Not implemented yet, and where they will plug in:
 
-* Heston: features `(spot, variance)`, so `f = 2`. Instruments are the
-  spot and, when it is traded, a variance swap, so `d = 2`. The benchmark
-  hedge then has one weight per instrument. The variance swap's price belongs
-  in `instruments`; the variance factor stays in `features`, because a
-  feature is not something the P&L can trade.
 * Rough Bergomi: the volatility has memory, so the feature path has to carry
   it. The simulator will come from the sibling package `roughvol`.
 * Further cost models: implement `CostModel.amount`. `ProportionalCost`
   is the only one so far, the cost in Buehler, Gonon, Teichmann and Wood
   (2019), section 3. Costs sit on the environment, not inside the simulator,
-  so one batch of paths can be scored at several costs.
+  so one batch of paths can be scored at several costs. A proportional
+  rate times the variance swap's mark is a poor model of the cost of
+  trading that swap, because the mark is an integrated variance of order
+  10^-3. That is left for a later cost model.
 """
 
 from __future__ import annotations

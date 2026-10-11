@@ -6,7 +6,7 @@ import importlib
 
 import pytest
 
-MODULES = ("env", "markets", "hedging", "risk", "policy", "train")
+MODULES = ("env", "markets", "hedging", "risk", "policy", "train", "heston")
 
 
 def pytest_addoption(parser):
@@ -18,7 +18,7 @@ def pytest_addoption(parser):
 
 
 class Impl:
-    """Looks a function up in <package>.env, .markets, .hedging, .risk, .policy, .train.
+    """Looks a function up in the package's env, markets, hedging, risk, policy, train, heston.
 
     A function missing from an exercises package skips the test instead of failing it,
     so Corey can implement one function at a time.

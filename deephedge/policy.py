@@ -5,8 +5,10 @@ the time, the market's feature row, and the position held coming into that
 date. It does not see the market object. The benchmark hedge is the
 exception: it is `Market.benchmark_positions`, computed by the market.
 `DeltaPolicy` is that hedge for Black-Scholes, written in torch so it can
-share a rollout with the network. On a Heston market the benchmark will be
-whatever that market returns, and this class stays the Black-Scholes one.
+share a rollout with the network. On a Heston market the benchmark is
+`Heston.benchmark_positions`, and `HestonPolicy` is the network that
+reads spot and variance and returns a spot weight and a variance-swap
+weight. `DeltaPolicy` stays the Black-Scholes one.
 
 Session 00's network reads three scalars built from the spot (feature column
 0): time to maturity over T, log moneyness over sqrt(tau), and the previous
@@ -84,6 +86,80 @@ class DeltaPolicy(nn.Module):
         sd = self.sigma * math.sqrt(tau)
         d1 = (torch.log(S / self.strike) + (self.r + 0.5 * self.sigma**2) * tau) / sd
         return torch.special.ndtr(d1)
+
+
+class HestonPolicy(nn.Module):
+    """Shared-weight network for the spot and a variance swap.
+
+    Five inputs, each order one: time to maturity over T, log moneyness
+    over sqrt(tau), variance over theta, the incoming spot position, and
+    the incoming variance-swap position divided by `varswap_scale`.
+
+    The model hedge's variance-swap weight is a few hundred, because the
+    swap is an integrated variance of order 10^-3 while vega is order 10.
+    The last layer outputs that weight in units of `varswap_scale`
+    (default 100) and the forward pass multiplies it back, so the network
+    is asked for a number of order one. It starts at half a share of the
+    spot and a flat variance swap, with small last-layer weights.
+    """
+
+    def __init__(
+        self,
+        strike: float,
+        maturity: float,
+        theta: float,
+        width: int = 64,
+        depth: int = 3,
+        varswap_scale: float = 100.0,
+    ):
+        super().__init__()
+        self.strike = float(strike)
+        self.maturity = float(maturity)
+        self.theta = float(theta)
+        self.width = int(width)
+        self.depth = int(depth)
+        self.varswap_scale = float(varswap_scale)
+        layers: list[nn.Module] = []
+        d_in = 5
+        for _ in range(depth):
+            layers += [nn.Linear(d_in, width), nn.ReLU()]
+            d_in = width
+        layers.append(nn.Linear(d_in, 2))
+        self.net = nn.Sequential(*layers)
+        last = self.net[-1]
+        nn.init.normal_(last.weight, mean=0.0, std=0.01)
+        nn.init.zeros_(last.bias)
+        with torch.no_grad():
+            last.bias[0] = 0.5
+
+    def forward(self, t: float, features: torch.Tensor, prev: torch.Tensor) -> torch.Tensor:
+        features = torch.as_tensor(features, dtype=torch.float32)
+        prev = torch.as_tensor(prev, dtype=torch.float32)
+        tau = max(self.maturity - float(t), 1e-8)
+        spot = features[:, 0]
+        variance = features[:, 1]
+        scaled = torch.stack(
+            [
+                torch.full_like(spot, tau / self.maturity),
+                torch.log(spot / self.strike) / math.sqrt(tau),
+                variance / self.theta,
+                prev[:, 0],
+                prev[:, 1] / self.varswap_scale,
+            ],
+            dim=-1,
+        )
+        raw = self.net(scaled)
+        return torch.stack([raw[:, 0], raw[:, 1] * self.varswap_scale], dim=-1)
+
+    def config(self) -> dict:
+        return {
+            "strike": self.strike,
+            "maturity": self.maturity,
+            "theta": self.theta,
+            "width": self.width,
+            "depth": self.depth,
+            "varswap_scale": self.varswap_scale,
+        }
 
 
 class NoHedgePolicy(nn.Module):
