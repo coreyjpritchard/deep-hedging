@@ -20,6 +20,18 @@ decision rule for three starting positions.
 | 02 | How does the learned hedge change when the cost model changes? | `sessions/02_cost_models.py`, static copy in [`docs/02_cost_models.html`](docs/02_cost_models.html) |
 | 03 | Does the learned band match the Whalley-Wilmott band? | `sessions/03_whalley_wilmott.py`, static copy in [`docs/03_whalley_wilmott.html`](docs/03_whalley_wilmott.html) |
 
+The playground trains a hedge in one market and scores it in another.
+`marimo run playground/app.py`, static copy in
+[`docs/playground/index.html`](docs/playground/index.html).
+The default picture is a small network trained on Black-Scholes and scored
+on Heston. On the static page the training entropic risk fell from 2.971 to
+1.324. On those training paths the network's entropic risk is 1.324
+(standard error 0.020) against delta 1.540 (standard error 0.017). On Heston
+the mean P&L is less negative than delta's, and the entropic risk is higher:
+17.14 (standard error 1.00) against 6.75 (standard error 0.89). Another run
+of the same budget moved that test entropic risk to 13.39. The tail is not
+stable yet. The Heston research comparison is on hold. The log has the budget.
+
 Findings from session 00, on 20 000 fresh paths with a 50 bp cost:
 
 - Delta hedging has mean P&L -1.37 against a premium of 2.28; the network, -0.83. The
@@ -119,13 +131,22 @@ marimo run sessions/00_cost_of_hedging.py     # session 00; marimo edit to see t
 marimo run sessions/01_heston_deep_hedge.py   # session 01, the 2019 Heston figure
 marimo run sessions/02_cost_models.py         # session 02, cost models and the swap unit
 marimo run sessions/03_whalley_wilmott.py     # session 03, the Whalley-Wilmott band
+marimo run playground/app.py                  # train in one market, test in another
 pytest -m "not slow"                          # tests, a few seconds
 python -m deephedge.train                     # retrain the cached weights, about 3 minutes
 python -m deephedge.figures                   # redraw the README figure
 ```
 
-Each app opens with cached weights in `data/weights/`. Retraining takes about 30 seconds
-on four cores.
+Each session opens with cached weights in `data/weights/`. Retraining a session takes
+about 30 seconds on four cores. The playground trains when you press the button, on a
+few thousand paths, and the default picture is already drawn. A Python upload runs on
+your machine. There is no sandbox. Use it locally, with a file you trust.
+
+The static playground page is the default picture baked by `marimo export html`. It
+does not retrain in the browser. An embed that trains in the browser would need a
+Python runtime such as Pyodide, and torch does not run there. The log says what would
+have to change: a numpy backend for these small networks, or cached weights with
+simulation and scoring only.
 
 ## Layout
 
@@ -144,9 +165,16 @@ on four cores.
   and nothing about the market.
 - `deephedge/band.py` the Whalley-Wilmott half-width, the edge-trading rule, and
   the cloud and power-law summaries used in session 03.
-- `deephedge/policy.py` the feature-based network, a gamma-feature variant, the
-  Heston network, a delta policy, and rollouts.
+- `deephedge/policy.py` the feature-based network, a gamma-feature variant, a recurrent
+  network on the same three inputs, the Heston network, a delta policy, and rollouts.
 - `deephedge/train.py` end-to-end training and the cached settings of sessions 00, 01 and 02.
+- `deephedge/bootstrap.py` a block bootstrap of historical closes, as a market.
+- `deephedge/upload.py` load a Python file that implements `Market`, and check shapes
+  and a martingale condition. The file is executed. Local use.
+- `deephedge/playground.py` build the two markets, fit a small network, and score it.
+  Rough Bergomi is a stub that names `roughvol`.
+- `playground/app.py` the marimo app. `playground/templates/merton_jump.py` is the
+  jump-diffusion to copy. `playground/examples/daily_closes.csv` is a synthetic series.
 - `tests/` checks against closed forms and known rates; `pytest --impl=exercises` runs
   them against Corey's own implementations in `exercises/`.
 

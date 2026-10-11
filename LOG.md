@@ -7,7 +7,72 @@ sit on the environment, costs are pluggable, and the Whalley-Wilmott band is
 compared with the learned hedge on Black-Scholes in `sessions/03_whalley_wilmott.py`.
 That file is roadmap item 02. The box stays open until Corey works through it.
 File `sessions/02_cost_models.py` is the cost-model picture, not that question.
-**Next:** the same four hedgers under Heston, then under rough Bergomi with `roughvol`.
+The Heston and rough Bergomi research comparison is on hold.
+The playground is `playground/app.py`, a marimo app. The markets, the costs,
+the P&L and the networks are `deephedge`. Train and test are two radio cards.
+**Next:** Corey tries the playground locally. The research comparison, the same
+four hedgers under Heston and then rough Bergomi via `roughvol`, stays the next
+research session when that hold lifts.
+
+## 2026-10-11 The playground is one Python program
+
+The picture is `playground/app.py`. Two radio cards choose the training market
+and the test market. The default picture trains a small feed-forward network
+on Black-Scholes and scores it on Heston, so the misspecification is on screen
+before any click. The slots are radio cards. A drag-and-drop board would be a
+JavaScript widget, and the playground is Python so every part can be read in
+one language. A file can still be dropped on the CSV box or the Python box.
+Marimo provides that box. The code that reads the file is Python.
+
+The markets, costs, P&L and networks are `deephedge`. There is no second
+simulator. `fit_policy` matches `train` when the interest rate is zero and the
+cost is a plain rate. When the rate is positive the network still sees the raw
+spot, and the P&L is charged on the discounted spot.
+
+The static page is one run: 2 000 paths, 30 steps, 20 epochs, width 16,
+depth 2, proportional cost 50 bp, training seed 0, test seed 12345, four
+torch threads, about 1.5 seconds. The training entropic risk fell from 2.971
+to 1.324. On the training paths the network's entropic risk is 1.324
+(standard error 0.020) against delta 1.540 (standard error 0.017). The mean
+P&L is -1.023 (standard error 0.017) against -1.358 (standard error 0.013).
+On Heston the premium in the P&L is the Black-Scholes price 2.287. The
+Heston premium is 1.692. The network mean is -0.488 (standard error 0.046)
+against delta -0.701 (standard error 0.036). The entropic risk goes the
+other way: 17.14 (standard error 1.00) against 6.75 (standard error 0.89).
+The mean improves and the tail gets heavier. A second run of the same
+budget, with torch on one thread, gave a test entropic risk of 13.39 rather
+than 17.14. The in-sample comparison with delta stayed on the same side.
+The Heston tail is not stable at this budget. The standard errors above are
+sampling error on these 2 000 paths, not across training seeds. A larger
+test sample, and a fixed training seed that does not depend on thread
+count, is the next specification if the tail is the question.
+
+The hedge trades the spot only. On Heston, delta is the Black-Scholes delta
+with volatility equal to the square root of v0. The characteristic-function
+hedge also trades a variance swap, and that swap is not in this book. The
+shaded band is the 1997 Whalley-Wilmott formula at that volatility.
+
+A CSV is a block bootstrap of log returns. Each step is one historical
+return. The historical drift stays unless the mean is subtracted. With the
+drift left in, the discounted spot is not a martingale. A Python file
+implements `Market`. The template is `playground/templates/merton_jump.py`,
+a Merton jump-diffusion, with the draw order written at the top. The upload
+checks shapes and a martingale condition: the mean of the discounted terminal
+spot within 4 standard errors of s0. The app uses 1 024 paths for that check.
+The file is executed. There is no sandbox. It is for local use. Rough Bergomi
+is a `Market` subclass whose `simulate` raises `NotImplementedError` and
+names `roughvol`.
+
+A website embed is not built. Torch does not run in Pyodide. Two later
+routes are open, and neither is in this change. One is a numpy or pure-Python
+forward and backward for these small feed-forward and recurrent nets, with
+the same features and the same P&L. The markets are already numpy. The other
+is to ship cached weights and a cached loss curve, and let the widget only
+simulate and score. The main path stays the torch loop. It is the loop the
+sessions use, and it is short enough to read.
+
+`marimo run playground/app.py` is the local app. The static copy of the
+default picture is `docs/playground/index.html`.
 
 ## 2026-10-11 The Whalley-Wilmott band is right where the cost is small
 

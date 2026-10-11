@@ -39,3 +39,4 @@ select = ["E", "F", "I", "UP", "B", "NPY"]
 [tool.ruff.lint.per-file-ignores]
 # marimo displays the last expression of a cell
 "sessions/*" = ["B018"]
+"playground/*" = ["B018"]
