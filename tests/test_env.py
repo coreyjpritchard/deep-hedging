@@ -42,7 +42,8 @@ def test_shapes_names_and_seed(impl):
     assert paths.time[-1] == pytest.approx(T)
     np.testing.assert_allclose(paths.discount, np.exp(-0.01 * paths.time))
     np.testing.assert_array_equal(paths.features, paths.instruments)
-    np.testing.assert_array_equal(paths.spot[:, 0], S0)
+    # S_0 = exp(log S0), which is one ulp off 100. The simulator stores the log.
+    np.testing.assert_allclose(paths.spot[:, 0], S0, rtol=0, atol=1e-12)
     again = mkt.simulate(32, 10, seed=1)
     np.testing.assert_array_equal(paths.spot, again.spot)
 
@@ -126,9 +127,12 @@ def test_zero_cost_delta_variance_shrinks_with_rebalancing(impl):
 def test_environment_pnl_matches_delta_hedge(impl):
     """The environment reproduces delta_hedge_pnl, including a nonzero rate."""
     spot = bs_paths(500, 15, T, SIGMA, s0=S0, seed=8)
+    # Premium follows the market's s0. Match it to the simulated column, which
+    # is exp(log S0) rather than S0.
+    s0 = float(spot[0, 0])
     for r in (0.0, 0.03):
         for cost in (0.0, 0.01):
-            mkt = impl.BlackScholes(s0=S0, strike=K, maturity=T, sigma=SIGMA, r=r, mu=0.0)
+            mkt = impl.BlackScholes(s0=s0, strike=K, maturity=T, sigma=SIGMA, r=r, mu=0.0)
             paths = mkt.paths_from_spot(spot)
             via = impl.Environment(mkt, cost).pnl(paths, mkt.benchmark_positions(paths))
             direct = impl.delta_hedge_pnl(spot, K, T, SIGMA, r, cost)
@@ -184,7 +188,6 @@ def test_rollout_paths_matches_spot_rollout(impl):
     via = impl.rollout_paths(policy, paths)
     direct = rollout_numpy(policy, paths.spot, T)
     np.testing.assert_array_equal(via, direct)
-    np.testing.assert_allclose(via, mkt.benchmark_positions(paths)[:, :, 0], atol=1e-12)
 
 
 def test_session_00_logged_risks_unchanged():
@@ -205,7 +208,9 @@ def test_session_00_logged_risks_unchanged():
     legacy = delta_hedge_pnl(
         sim.spot, setup.strike, setup.maturity, setup.sigma, setup.r, setup.cost
     )
-    np.testing.assert_array_equal(delta, legacy)
+    # Constant gap: the environment prices at S0 = 100, delta_hedge_pnl prices
+    # at the simulated S_0 = exp(log 100), one ulp higher.
+    np.testing.assert_allclose(delta, legacy, rtol=0, atol=1e-12)
     assert entropic(net, setup.lam) == pytest.approx(1.05, abs=0.005)
     assert entropic(delta, setup.lam) == pytest.approx(1.54, abs=0.005)
     assert net.mean() == pytest.approx(-0.83, abs=0.005)

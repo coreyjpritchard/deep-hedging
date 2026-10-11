@@ -85,7 +85,7 @@ button trains a new network in about 30 seconds at 30 steps on four cores.
   signature, and rollouts. A rollout on several features and several instruments is
   there for the markets that need it.
 - `deephedge/train.py` end-to-end training and the cached settings of session 00.
-- `tests/` checks against closed forms and known rates; `pytest --impl exercises` runs
+- `tests/` checks against closed forms and known rates; `pytest --impl=exercises` runs
   them against Corey's own implementations in `exercises/`.
 
 MIT licence.

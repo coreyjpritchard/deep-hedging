@@ -27,10 +27,14 @@ feature row of width `f` and expects a position of width `d`, and `d` need not e
 `f`. Rough Bergomi will put volatility memory into the feature path; the simulator
 stays the sibling package `roughvol`. Further cost models implement `CostModel.amount`.
 
-Session 00 numbers did not move. On 20 000 paths with seed 12345 the entropic risk at
-50 bp is still 1.05 for the network and 1.54 for delta (means -0.83 and -1.37). The
-evaluation goes through `Environment.pnl` and `benchmark_positions`, and it matches the
-previous `delta_hedge_pnl` pathwise.
+Session 00 numbers did not move at the precision of the 2026-10-08 table. On 20 000
+paths with seed 12345 the entropic risk at 50 bp is still 1.05 for the network and
+1.54 for delta (means -0.83 and -1.37). The whole table rounds to the same printed
+digits. The network P&L matches the previous `pnl_from_positions` pathwise. The delta
+P&L is lower by 2.8e-14 on every path. The environment sells the call at the analytic
+price of S0 = 100. `delta_hedge_pnl` sold at the price of the simulated S_0, and
+exp(log 100) is one unit in the last place above 100. That gap is below the reported
+digits. The network was already sold at the price of S0 = 100.
 
 ## 2026-10-08 Session 00: delta hedging loses money when trading costs money
 
