@@ -2,10 +2,79 @@
 
 Dated entries, newest first. What was learned, what surprised, open questions.
 
-**Current state.** Sessions 00 and 01 are built. Black-Scholes and Heston both sit on
-the environment interface. **Next:** work through 00 and 01. The open design point
-before more markets is the cost of the variance swap, which a proportional rate on
-its mark does not capture.
+**Current state.** Sessions 00, 01 and 02 are built. Black-Scholes and Heston sit on
+the environment, and the cost model is pluggable. **Next:** the Whalley-Wilmott band
+(roadmap item 02). Work through 00 and 01 first. File `sessions/02_cost_models.py` is
+the cost-model picture, not that research question.
+
+## 2026-10-11 Transaction costs are a model, not a rate
+
+The cost sits on the environment, in `deephedge/costs.py`. Three models:
+`ProportionalCost`, `FixedPlusProportional`, and `QuadraticCost`. Numpy `amount`
+and torch `amount_torch(..., exact=True)` apply each one the same way. A number
+or a tuple is still a proportional rate, which is what sessions 00 and 01 pass.
+
+The variance swap is not requoted. Its mark stays the pricing instrument, so the
+gains and the hedge ratio `vega / (dP/dv)` are unchanged. A proportional rate
+times that mark (about 0.003) does not charge a swap of a few hundred contracts.
+The cost model takes a per-instrument `unit` instead. `None` means the discounted
+price. `unit=(None, 1.0)` keeps the spot on its price and charges one currency
+unit per variance swap traded. `ProportionalCost(rate=(0.005, 0.002), unit=(None, 1.0))`
+is 50 bp on the spot and 0.002 cash per swap.
+
+Liquidation stays charged. The book is flat before the first date and flat at
+maturity, and both trades are in `amount`. A constant holding pays a fixed cost
+twice and nothing in between. The paper's numerical examples zero the maturity
+cost. This engine does not, which is what session 00 already did.
+
+The fixed cost is an indicator, so a training step has no gradient from it.
+`amount_torch(..., exact=False)` uses `tanh(|change| / width)`. Evaluation uses
+the indicator. The width does not enter the exact charge. The default `1e-2`
+is already saturated on a daily delta move of a few hundredths, so a network
+that is already trading gets no signal from the fixed cost. Session 02 trains
+the fixed cost at width `0.05`. Proportional and quadratic costs have no
+surrogate. `amount` does not see the discount curve, so a fixed charge is
+time-0 cash. Sessions use `r = 0`, where that is the cash paid on the day.
+
+`sessions/02_cost_models.py` is the picture: market and cost model as controls,
+a charge slider, cached networks. It is not roadmap item 02. That item is the
+Whalley-Wilmott band, and it should be the next research session.
+
+On 20 000 Black-Scholes paths, seed 12345, premium 2.29, entropic risk at
+lambda 1. Standard errors of the means are under 0.01.
+
+| cost | network mean | network entropic | delta mean | delta entropic |
+|---|---|---|---|---|
+| none | +0.00 | 0.06 | +0.00 | 0.06 |
+| proportional 50 bp | -0.83 | 1.05 | -1.37 | 1.54 |
+| fixed 0.05 per trade | -1.50 | 1.79 | -1.55 | 1.61 |
+| quadratic impact 0.02 | -0.54 | 0.94 | -1.88 | 2.46 |
+
+At S = 100 and t = T/2, moving the incoming position from 0.2 to 0.8 moves the
+chosen position by 0.01 of that gap with no cost, by 0.66 at 50 bp, and by 0.57
+under the quadratic cost. Under the fixed cost the three incoming positions all
+map to about 0.55. The network trades on 28 per cent of dates and delta on 93
+per cent, and the network's entropic risk is worse than delta's. A fixed charge
+does not reward a soft band.
+
+On 4 000 Heston paths, same seed, premium 1.692, 50 per cent CVaR. The networks
+are small (width 32, depth 2, 8 000 training paths, 50 epochs). Charged 50 bp on
+each mark, the network's mean absolute swap holding is 232 against 499 for the
+model hedge. Mean P&L -0.52 against -1.41, CVaR 1.30 against 1.84. Standard
+error of the network mean is 0.017. Charged 0.002 per swap, with 50 bp still on
+the spot, the network's mean absolute swap holding is 0.005. Mean P&L -0.31,
+CVaR 1.43. The model hedge, which keeps the swap, has mean -7.34 and CVaR 10.57.
+
+The first research session should be the Whalley-Wilmott band on Black-Scholes
+with `ProportionalCost` only. The asymptotic half-width is
+`(3/2 * c * S * exp(-r(T-t)) * Gamma^2 / gamma)^(1/3)`, and it belongs on the
+same axes as the learned band in session 00, across spot, time and the
+proportional cost. The fixed charge and the Heston swap are the follow-up: a
+fixed cost does not scale with that cube root, and this sample already shows
+no band under a fixed charge of 0.05.
+
+`deephedge/export.py` writes schema `deephedge.hedge/v1` for a future widget.
+The example is `docs/examples/bs_delta_50bp.json`.
 
 ## 2026-10-11 Heston on the same interface, session 01
 

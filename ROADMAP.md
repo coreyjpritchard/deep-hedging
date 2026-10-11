@@ -34,8 +34,10 @@ runs on the shared interface, which is separate from working through the session
 - [ ] **Heston on the same interface.** Features `(spot, variance)`. A variance swap
   can be switched on as a second hedging instrument. This is the market for session 01.
 - [ ] **Pluggable transaction costs.** Cost models are part of the environment and
-  independent of the volatility model. The proportional cost is the first; the
-  others are not written yet.
+  independent of the volatility model. `ProportionalCost`, `FixedPlusProportional`
+  and `QuadraticCost` are in `deephedge/costs.py`. A cash `unit` charges the
+  variance swap per contract. The swap's mark is not requoted. Liquidation at
+  maturity is charged. The picture is `sessions/02_cost_models.py`.
 - [ ] **Rough Bergomi on the same interface.** Features carry volatility memory. The
   simulator comes from the sibling repository
   [rough-volatility](https://github.com/coreyjpritchard/rough-volatility), package
