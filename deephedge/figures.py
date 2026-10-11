@@ -11,8 +11,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-from deephedge.hedging import bs_call_delta  # noqa: E402
-from deephedge.markets import bs_paths  # noqa: E402
 from deephedge.policy import held_positions, position_grid  # noqa: E402
 from deephedge.train import DEFAULT, cached_policy  # noqa: E402
 
@@ -24,11 +22,12 @@ def band_figure(path: Path = DOCS / "00_no_trade_band.png") -> Path:
     s = DEFAULT
     k = s.n_steps // 2
     t = k * s.maturity / s.n_steps
-    paths = bs_paths(s.m_eval, s.n_steps, s.maturity, s.sigma, s0=s.s0, seed=12345)
+    market = s.market()
+    paths = market.simulate(s.m_eval, s.n_steps, seed=12345).spot
     show = np.random.default_rng(0).choice(s.m_eval, 3_000, replace=False)
     spots = np.linspace(88, 112, 241)
     shown = np.array([0.2, 0.5, 0.8])
-    delta = bs_call_delta(spots, s.strike, s.maturity - t, s.sigma)
+    delta = market.delta(spots, s.maturity - t)
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.6), sharey=True)
     for ax, cost in zip(axes, (0.0, s.cost), strict=True):
         policy, trained_for = cached_policy(replace(s, cost=cost))

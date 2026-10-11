@@ -13,33 +13,21 @@ def _():
     import plotly.graph_objects as go
     import torch
 
-    from deephedge.hedging import (
-        bs_call_delta,
-        call_payoff,
-        delta_hedge_pnl,
-        pnl_from_positions,
-    )
-    from deephedge.markets import bs_paths
-    from deephedge.policy import held_positions, position_grid, rollout_numpy
+    from deephedge.policy import held_positions, position_grid, rollout_paths
     from deephedge.risk import summarise
     from deephedge.train import DEFAULT, cached_policy, train_setup
 
     torch.set_num_threads(4)
     return (
         DEFAULT,
-        bs_call_delta,
-        bs_paths,
         cached_policy,
-        call_payoff,
-        delta_hedge_pnl,
         go,
         mo,
         held_positions,
         np,
-        pnl_from_positions,
         position_grid,
         replace,
-        rollout_numpy,
+        rollout_paths,
         summarise,
         train_setup,
     )
@@ -122,31 +110,19 @@ def _(cached_policy, get_trained, setup):
 
 @app.cell(hide_code=True)
 def _(
-    bs_paths,
-    call_payoff,
-    delta_hedge_pnl,
     np,
-    pnl_from_positions,
     policy,
-    rollout_numpy,
+    rollout_paths,
     setup,
     summarise,
 ):
-    eval_paths = bs_paths(
-        setup.m_eval, setup.n_steps, setup.maturity, setup.sigma, s0=setup.s0, seed=12345
-    )
+    env = setup.environment()
+    sim = env.market.simulate(setup.m_eval, setup.n_steps, seed=12345)
+    eval_paths = sim.spot
     pnl = {
-        "Delta hedge": delta_hedge_pnl(
-            eval_paths, setup.strike, setup.maturity, setup.sigma, setup.r, setup.cost
-        ),
-        "Network": pnl_from_positions(
-            eval_paths,
-            rollout_numpy(policy, eval_paths, setup.maturity),
-            call_payoff(setup.strike),
-            setup.cost,
-            setup.premium,
-        ),
-        "No hedge": setup.premium - np.maximum(eval_paths[:, -1] - setup.strike, 0.0),
+        "Delta hedge": env.pnl(sim, env.market.benchmark_positions(sim)),
+        "Network": env.pnl(sim, rollout_paths(policy, sim)),
+        "No hedge": env.pnl(sim, np.zeros((setup.m_eval, setup.n_steps))),
     }
     stats = {name: summarise(x, setup.alpha, setup.lam) for name, x in pnl.items()}
     return eval_paths, pnl, stats
@@ -190,7 +166,6 @@ def _(go, np, pnl, setup, stats):
 
 @app.cell(hide_code=True)
 def _(
-    bs_call_delta,
     colours,
     eval_paths,
     go,
@@ -208,7 +183,7 @@ def _(
     _spots = np.linspace(88, 112, 241)
     _shown = np.array([0.2, 0.5, 0.8])
     _positions = position_grid(policy, _t, _spots, _shown)
-    _delta = bs_call_delta(_spots, setup.strike, setup.maturity - _t, setup.sigma, setup.r)
+    _delta = setup.market().delta(_spots, setup.maturity - _t)
 
     fig_band = go.Figure()
     fig_band.add_scattergl(
