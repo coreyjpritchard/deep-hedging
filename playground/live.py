@@ -6,10 +6,7 @@ app = marimo.App(width="medium", app_title="Live hedging")
 
 @app.cell
 def _():
-    import io
-
     import marimo as mo
-    from matplotlib import pyplot as plt
 
     from deephedge.live import (
         describe,
@@ -21,14 +18,16 @@ def _():
         simulate_live,
     )
 
-    def png(fig) -> bytes:
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
-        plt.close(fig)
-        return buf.getvalue()
+    def show(fig):
+        # The figure travels in the cell output. An image URL would be a second
+        # request, and the next tick deletes it before a remote browser loads it.
+        return mo.ui.plotly(
+            fig,
+            config={"responsive": True, "displayModeBar": False, "displaylogo": False},
+        )
 
     return (
-        png,
+        show,
         describe,
         describe_batch,
         draw_batch,
@@ -71,14 +70,15 @@ def _(mo, set_batch, set_frame):
         on_change=_reset,
     )
     steps = mo.ui.slider(
-        10, 60, step=1, value=30, show_value=True, label="Steps", on_change=_reset,
+        10, 60, step=1, value=30, show_value=True, label="Steps", full_width=True,
+        on_change=_reset,
     )
     cost = mo.ui.slider(
         0, 200, step=5, value=50, show_value=True, label="Cost, basis points",
-        on_change=_reset,
+        full_width=True, on_change=_reset,
     )
     width = mo.ui.slider(
-        0.0, 0.40, step=0.01, value=0.10, show_value=True,
+        0.0, 0.40, step=0.01, value=0.10, show_value=True, full_width=True,
         label="Band half-width, shares", on_change=_reset,
     )
     return cost, market, steps, width
@@ -130,21 +130,30 @@ def _(get_seed, mo, set_batch, set_frame, set_seed):
 def _(
     cost, market, mo, new_path, play, restart, seed, speed, step, steps, width,
 ):
-    mo.vstack([
-        mo.hstack([market, steps, cost, width, seed], justify="start", gap=1),
-        mo.hstack(
-            [play, speed, step, restart, new_path],
-            justify="start",
-            gap=1,
-            align="center",
-        ),
-        mo.md(
+    mo.vstack(
+        [
+            market,
+            steps,
+            cost,
+            width,
+            seed,
+            mo.hstack(
+                [play, speed, step, restart, new_path],
+                justify="start",
+                gap=0.75,
+                align="center",
+                wrap=True,
+            ),
+            mo.md(
             "Play advances one date on the speed clock. A shorter interval is faster. "
             "Step moves one date. New path adds one to the seed. "
             "The vertical scale is the whole path, so the axes do not jump. "
             "The lines stop at the current date."
-        ),
-    ])
+            ),
+        ],
+        align="stretch",
+        gap=0.6,
+    )
     return
 
 
@@ -159,6 +168,7 @@ def _(get_frame, mo, set_frame, steps):
         show_value=True,
         include_input=True,
         label="Date",
+        full_width=True,
         on_change=lambda value: set_frame(int(value)),
     )
     date
@@ -194,11 +204,17 @@ def _(cost, market, market_by_name, seed, simulate_live, steps, width):
 
 
 @app.cell
-def _(book, date, describe, draw_live, mo, png):
+def _(book, date, describe, draw_live, mo, show):
     index = min(max(int(date.value), 0), book.n)
     fig = draw_live(book, index)
     mo.vstack([
-        mo.image(png(fig), alt="Spot, band, cash and hedge result up to this date"),
+        show(fig),
+        mo.md(
+            "Black is the spot. Blue is delta and the band. Orange is the band "
+            "holding and its P/L. Grey dashes are delta hedging. Teal is the band's "
+            "cash. Dotted lines are costs. A dot is a rebalance. On Heston, green "
+            "is the variance."
+        ),
         mo.callout(mo.md(describe(book, index)), kind="neutral"),
     ])
     return
@@ -231,7 +247,7 @@ def _(book, go, market_by_name, score_books, set_batch):
 
 
 @app.cell
-def _(book, describe_batch, draw_batch, get_batch, mo, png):
+def _(book, describe_batch, draw_batch, get_batch, mo, show):
     score = get_batch()
     if score is None or score.token != book.token:
         picture = mo.md(
@@ -240,9 +256,8 @@ def _(book, describe_batch, draw_batch, get_batch, mo, png):
             "On Heston the cosine delta takes a few seconds."
         )
     else:
-        batch_fig = draw_batch(book, score)
         picture = mo.vstack([
-            mo.image(png(batch_fig), alt="Terminal result of the band and of delta hedging"),
+            show(draw_batch(book, score)),
             mo.md(describe_batch(score)),
         ])
     picture
@@ -254,6 +269,10 @@ def _(book, mo):
     mo.md(
         f"""
         {book.delta_note}
+
+        A call delta is kept between 0 and 1. When the cosine expansion steps
+        outside that interval, the caption quotes the raw value and the figure
+        uses the clipped one.
 
         The holding is clipped to a fixed band around delta. Inside the band it
         stays where it is. When delta moves past it, the holding is pushed to

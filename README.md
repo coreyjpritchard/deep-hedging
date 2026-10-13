@@ -31,6 +31,12 @@ that view are in [`LEARN.md`](LEARN.md). None of those lessons is built.
 
 ![Date 4 of the default path: the holding sits inside the band](docs/live/date4.png)
 
+The chart is a plotly figure in the cell output, so it arrives with the
+caption. The Heston choice uses xi = 0.5, which keeps daily variance off the
+truncation floor. `Heston()` stays at xi = 2.
+
+![Phone width, Heston, date 8: the controls sit in a column and the chart is in the page](docs/live/phone.png)
+
 On that default path (Black-Scholes, seed 7, 30 steps, 50 bp, half-width
 0.10) the band trades on 16 of the 30 hedging dates. A short animation is
 [`docs/live/live.gif`](docs/live/live.gif). The log has the histogram.

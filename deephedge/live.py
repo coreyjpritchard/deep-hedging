@@ -22,8 +22,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from matplotlib import pyplot as plt
-from matplotlib.figure import Figure
+import plotly.graph_objects as go
+from plotly.graph_objs import Figure
+from plotly.subplots import make_subplots
 
 from deephedge.costs import ProportionalCost
 from deephedge.env import (
@@ -41,6 +42,8 @@ __all__ = [
     "BatchScore",
     "Book",
     "LivePath",
+    "LIVE_HESTON_XI",
+    "clip_call_delta",
     "clip_positions",
     "describe",
     "describe_batch",
@@ -55,6 +58,11 @@ __all__ = [
 
 _TRADE = 1e-10
 _EDGE = 1e-8
+# The 2019 Heston uses xi = 2. On a 30-day daily grid that vol of vol
+# drives the full-truncation variance through zero and leaves it there,
+# so the spot freezes. The live demo keeps every other 2019 parameter
+# and uses a smaller xi, which still moves variance and rarely hits zero.
+LIVE_HESTON_XI = 0.5
 
 _BAND = "#c2410c"
 _DELTA = "#4b5563"
@@ -106,6 +114,7 @@ class LivePath:
     discount: np.ndarray
     variance: np.ndarray | None
     delta: np.ndarray
+    delta_raw: np.ndarray
     price: np.ndarray
     band: Book
     delta_hedge: Book
@@ -145,13 +154,24 @@ def market_by_name(name: str) -> Market:
     """The two markets the live view can draw.
 
     Both are the short at-the-money call used in the sessions: spot 100,
-    maturity 30/365, rates zero. Heston is the 2019 parameter set.
+    maturity 30/365, rates zero. Heston keeps the 2019 kappa, theta, v0
+    and rho, with `xi` equal to `LIVE_HESTON_XI` rather than 2.
     """
     if name == "Black-Scholes":
         return BlackScholes(s0=100.0, strike=100.0, maturity=30 / 365, sigma=0.2, r=0.0, mu=0.0)
     if name == "Heston":
-        return Heston()
+        return Heston(xi=LIVE_HESTON_XI)
     raise ValueError(f"market must be Black-Scholes or Heston, got {name!r}")
+
+
+def clip_call_delta(delta: np.ndarray) -> np.ndarray:
+    """Clip a call delta to `[0, 1]`.
+
+    With no dividends, a vanilla call delta lies in that interval. The
+    cosine expansion can print a value just outside it when variance sits
+    on the truncation floor. The excess is a numerical error.
+    """
+    return np.clip(np.asarray(delta, dtype=float), 0.0, 1.0)
 
 
 def clip_positions(delta: np.ndarray, half_width: float) -> np.ndarray:
@@ -287,10 +307,17 @@ def _note(market: Market) -> str:
             f"{market.sigma:.0%}."
         )
     if isinstance(market, Heston):
-        return (
+        line = (
             "Delta is the Heston call delta from the cosine expansion, "
             "using today's variance. The hedge does not trade the variance swap."
         )
+        if market.xi < 1.0:
+            line += (
+                f" This demo uses xi = {market.xi:g}. The 2019 market uses xi = 2, "
+                "which drives daily variance onto the truncation floor and leaves "
+                "the spot frozen."
+            )
+        return line
     raise TypeError(f"live view supports BlackScholes and Heston, got {type(market).__name__}")
 
 
@@ -311,7 +338,8 @@ def simulate_live(market: Market, n: int, seed: int, half_width: float, cost: fl
     if half_width < 0.0 or cost < 0.0:
         raise ValueError("half_width and cost must be non-negative")
     paths = market.simulate(1, n, int(seed))
-    price, delta = _greeks(market, paths)
+    price, raw = _greeks(market, paths)
+    delta = clip_call_delta(raw)
     held = clip_positions(delta[0, :-1], half_width)
     delta_held = clip_positions(delta[0, :-1], 0.0)
     spot = paths.spot[0]
@@ -341,6 +369,7 @@ def simulate_live(market: Market, n: int, seed: int, half_width: float, cost: fl
         discount=discount,
         variance=variance,
         delta=delta[0],
+        delta_raw=raw[0],
         price=price[0],
         band=band,
         delta_hedge=plain,
@@ -372,7 +401,8 @@ def score_books(
     if m < 2 or n < 1:
         raise ValueError("m must be at least 2 and n at least 1")
     paths = market.simulate(m, n, int(seed))
-    _price, delta = _greeks(market, paths)
+    _price, raw = _greeks(market, paths)
+    delta = clip_call_delta(raw)
     band = clip_positions(delta[:, :-1], half_width)
     plain = clip_positions(delta[:, :-1], 0.0)
     pnl_band = terminal_of(market, paths, band, cost)
@@ -445,6 +475,24 @@ def _band_sentence(path: LivePath, frame: int) -> str:
     return f"{where} {action}"
 
 
+def _variance_sentence(path: LivePath, frame: int) -> str:
+    assert path.variance is not None
+    variance = float(path.variance[frame])
+    if variance <= 1e-8:
+        return " Variance is on the truncation floor, so the spot's shock is off."
+    return f" Variance is {variance:.4f}."
+
+
+def _cosine_note(path: LivePath, frame: int) -> str:
+    raw = float(path.delta_raw[frame])
+    if -1e-6 <= raw <= 1.0 + 1e-6:
+        return ""
+    return (
+        f" The cosine delta was {raw:.3f}. A call with no dividends has delta "
+        "between 0 and 1, so the figure uses the clipped value."
+    )
+
+
 def describe(path: LivePath, frame: int) -> str:
     """Plain-language account of one date. British spelling, no symbol for the prose."""
     frame = _check_frame(path, frame)
@@ -460,13 +508,15 @@ def describe(path: LivePath, frame: int) -> str:
         opening += f" The shares held into the last step gained {_money(gain)}."
         if band.rebalanced[frame]:
             opening += " Closing the band hedge is charged."
+        opening += _cosine_note(path, frame)
     else:
         opening = f"Date {frame} of {path.n}. The spot is {spot:.2f}."
         if frame == 0:
             opening += f" The call is sold for {_money(path.premium)}."
         if path.variance is not None:
-            opening += f" Variance is {float(path.variance[frame]):.4f}."
+            opening += _variance_sentence(path, frame)
         opening += " " + _band_sentence(path, frame)
+        opening += _cosine_note(path, frame)
         if frame > 0:
             gain = float(band.gains[frame] - band.gains[frame - 1])
             opening += f" The shares held into this date gained {_money(gain)}."
@@ -511,128 +561,339 @@ def _limits(values: np.ndarray, pad: float = 0.08) -> tuple[float, float]:
     return lo - span, hi + span
 
 
-def _style(ax) -> None:
-    ax.grid(True, color="#e5e7eb", linewidth=0.6)
-    ax.tick_params(labelsize=8)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
+def _range(values: np.ndarray, pad: float = 0.08) -> list[float]:
+    lo, hi = _limits(values, pad)
+    return [lo, hi]
+
+
+def _grids(fig: Figure) -> None:
+    fig.update_xaxes(showgrid=True, gridcolor="#e5e7eb", zeroline=False, tickfont=dict(size=10))
+    fig.update_yaxes(showgrid=True, gridcolor="#e5e7eb", zeroline=False, tickfont=dict(size=10))
 
 
 def draw_live(path: LivePath, frame: int) -> Figure:
-    """Four panels up to `frame`: spot, delta and the band, cash, P&L and costs."""
+    """Four panels up to `frame`: spot, delta and the band, cash, P/L and costs.
+
+    The figure is plotly, so a marimo cell can send it in the output itself.
+    Axis ranges cover the whole path and the lines stop at `frame`.
+    """
     frame = _check_frame(path, frame)
-    fig, axes = plt.subplots(4, 1, figsize=(8.6, 9.2), sharex=True)
+    fig = make_subplots(
+        rows=4,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.04,
+        specs=[
+            [{"secondary_y": True}],
+            [{"secondary_y": False}],
+            [{"secondary_y": False}],
+            [{"secondary_y": False}],
+        ],
+    )
     shown = slice(0, frame + 1)
     time = path.time[shown]
     last_trade = min(frame, path.n - 1)
     trade_time = path.time[: last_trade + 1]
+    x_range = [float(path.time[0]), float(path.time[-1])]
 
-    spot_ax, band_ax, cash_ax, pnl_ax = axes
-    spot_ax.plot(time, path.spot[shown], color=_SPOT, lw=1.6)
-    spot_ax.scatter([path.time[frame]], [path.spot[frame]], color=_SPOT, s=18, zorder=3)
-    spot_ax.axhline(path.strike, color="#9ca3af", lw=0.7, ls=":")
-    spot_ax.set_ylabel("spot")
-    spot_ax.set_ylim(*_limits(path.spot))
-    _style(spot_ax)
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=path.spot[shown],
+            mode="lines",
+            name="spot",
+            line=dict(color=_SPOT, width=2),
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[float(path.time[frame])],
+            y=[float(path.spot[frame])],
+            mode="markers",
+            marker=dict(color=_SPOT, size=8),
+            showlegend=False,
+            hoverinfo="skip",
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_hline(
+        y=path.strike,
+        line=dict(color="#9ca3af", width=1, dash="dot"),
+        row=1,
+        col=1,
+    )
     if path.variance is not None:
-        var_ax = spot_ax.twinx()
-        var_ax.plot(time, path.variance[shown], color="#059669", lw=1.0, alpha=0.85)
-        var_ax.set_ylabel("variance", color="#059669", fontsize=8)
-        var_ax.set_ylim(*_limits(path.variance))
-        var_ax.tick_params(labelsize=8, colors="#059669")
-        var_ax.grid(False)
+        fig.add_trace(
+            go.Scatter(
+                x=time,
+                y=path.variance[shown],
+                mode="lines",
+                name="variance",
+                line=dict(color="#059669", width=1.5),
+            ),
+            row=1,
+            col=1,
+            secondary_y=True,
+        )
 
     lower = path.delta[: last_trade + 1] - path.half_width
     upper = path.delta[: last_trade + 1] + path.half_width
-    band_ax.fill_between(trade_time, lower, upper, color=_MARK, alpha=0.18, lw=0, label="band")
-    band_ax.plot(trade_time, path.delta[: last_trade + 1], color=_MARK, lw=1.3, label="delta")
-    band_ax.plot(
-        time, path.band.position[shown], color=_BAND, lw=1.6, label="band holding"
+    fig.add_trace(
+        go.Scatter(
+            x=trade_time,
+            y=lower,
+            mode="lines",
+            line=dict(width=0),
+            showlegend=False,
+            hoverinfo="skip",
+        ),
+        row=2,
+        col=1,
     )
-    band_ax.plot(
-        time,
-        path.delta_hedge.position[shown],
-        color=_DELTA,
-        lw=1.0,
-        ls="--",
-        label="delta holding",
+    fig.add_trace(
+        go.Scatter(
+            x=trade_time,
+            y=upper,
+            mode="lines",
+            name="band",
+            fill="tonexty",
+            fillcolor="rgba(37, 99, 235, 0.18)",
+            line=dict(width=0),
+        ),
+        row=2,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=trade_time,
+            y=path.delta[: last_trade + 1],
+            mode="lines",
+            name="delta",
+            line=dict(color=_MARK, width=1.6),
+        ),
+        row=2,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=path.band.position[shown],
+            mode="lines",
+            name="band holding",
+            line=dict(color=_BAND, width=2),
+        ),
+        row=2,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=path.delta_hedge.position[shown],
+            mode="lines",
+            name="delta holding",
+            line=dict(color=_DELTA, width=1.4, dash="dash"),
+        ),
+        row=2,
+        col=1,
     )
     marks = path.band.rebalanced.copy()
     marks[frame + 1 :] = False
     if np.any(marks):
-        band_ax.scatter(
-            path.time[marks],
-            path.band.position[marks],
-            color=_BAND,
-            s=22,
-            zorder=4,
-            label="rebalance",
+        fig.add_trace(
+            go.Scatter(
+                x=path.time[marks],
+                y=path.band.position[marks],
+                mode="markers",
+                name="rebalance",
+                marker=dict(color=_BAND, size=8),
+            ),
+            row=2,
+            col=1,
         )
-    band_ax.set_ylabel("shares")
-    band_lo = float(min(np.min(path.delta) - path.half_width, 0.0))
-    band_hi = float(max(np.max(path.delta) + path.half_width, 1.0))
-    band_ax.set_ylim(*_limits(np.array([band_lo, band_hi]), pad=0.04))
-    band_ax.legend(loc="upper left", fontsize=7, frameon=False, ncol=3)
-    _style(band_ax)
 
-    cash_ax.plot(time, path.band.cash[shown], color=_CASH, lw=1.5, label="band cash")
-    cash_ax.plot(
-        time, path.delta_hedge.cash[shown], color=_DELTA, lw=1.0, ls="--", label="delta cash"
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=path.band.cash[shown],
+            mode="lines",
+            name="band cash",
+            line=dict(color=_CASH, width=2),
+        ),
+        row=3,
+        col=1,
     )
-    cash_ax.set_ylabel("cash")
-    cash_ax.set_ylim(*_limits(np.concatenate([path.band.cash, path.delta_hedge.cash])))
-    cash_ax.legend(loc="best", fontsize=7, frameon=False)
-    _style(cash_ax)
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=path.delta_hedge.cash[shown],
+            mode="lines",
+            name="delta cash",
+            line=dict(color=_DELTA, width=1.4, dash="dash"),
+        ),
+        row=3,
+        col=1,
+    )
 
-    pnl_ax.plot(time, path.band.pnl[shown], color=_BAND, lw=1.5, label="band P&L")
-    pnl_ax.plot(
-        time, path.delta_hedge.pnl[shown], color=_DELTA, lw=1.1, ls="--", label="delta P&L"
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=path.band.pnl[shown],
+            mode="lines",
+            name="band P/L",
+            line=dict(color=_BAND, width=2),
+        ),
+        row=4,
+        col=1,
     )
-    pnl_ax.plot(time, path.band.cost[shown], color=_BAND, lw=1.0, ls=":", label="band cost")
-    pnl_ax.plot(
-        time, path.delta_hedge.cost[shown], color=_DELTA, lw=1.0, ls=":", label="delta cost"
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=path.delta_hedge.pnl[shown],
+            mode="lines",
+            name="delta P/L",
+            line=dict(color=_DELTA, width=1.5, dash="dash"),
+        ),
+        row=4,
+        col=1,
     )
-    pnl_ax.axhline(0.0, color="#9ca3af", lw=0.6)
-    pnl_ax.set_ylabel("P&L and cost")
-    pnl_ax.set_xlabel("time, in years")
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=path.band.cost[shown],
+            mode="lines",
+            name="band cost",
+            line=dict(color=_BAND, width=1.3, dash="dot"),
+        ),
+        row=4,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=path.delta_hedge.cost[shown],
+            mode="lines",
+            name="delta cost",
+            line=dict(color=_DELTA, width=1.3, dash="dot"),
+        ),
+        row=4,
+        col=1,
+    )
+    fig.add_hline(y=0.0, line=dict(color="#9ca3af", width=1), row=4, col=1)
+    for row in range(1, 5):
+        fig.add_vline(
+            x=float(path.time[frame]),
+            line=dict(color="#d1d5db", width=1),
+            row=row,
+            col=1,
+        )
+
+    fig.update_yaxes(title_text="spot", range=_range(path.spot), row=1, col=1)
+    if path.variance is not None:
+        fig.update_yaxes(
+            title_text="variance",
+            range=_range(path.variance),
+            secondary_y=True,
+            row=1,
+            col=1,
+            showgrid=False,
+            title_font=dict(color="#059669", size=11),
+            tickfont=dict(color="#059669", size=10),
+        )
+    share_lo = float(min(np.min(path.delta) - path.half_width, 0.0))
+    share_hi = float(max(np.max(path.delta) + path.half_width, 1.0))
+    fig.update_yaxes(
+        title_text="shares",
+        range=_range(np.array([share_lo, share_hi]), pad=0.04),
+        row=2,
+        col=1,
+    )
+    cash = np.concatenate([path.band.cash, path.delta_hedge.cash])
+    fig.update_yaxes(title_text="cash", range=_range(cash), row=3, col=1)
     stacked = np.concatenate(
         [path.band.pnl, path.delta_hedge.pnl, path.band.cost, path.delta_hedge.cost]
     )
-    pnl_ax.set_ylim(*_limits(stacked))
-    pnl_ax.legend(loc="best", fontsize=7, frameon=False, ncol=2)
-    _style(pnl_ax)
+    fig.update_yaxes(title_text="P/L and cost", range=_range(stacked), row=4, col=1)
+    fig.update_xaxes(range=x_range)
+    fig.update_xaxes(title_text="time, in years", row=4, col=1)
 
-    for ax in axes:
-        ax.axvline(path.time[frame], color="#d1d5db", lw=0.8)
-        ax.set_xlim(float(path.time[0]), float(path.time[-1]))
     bp = path.cost * 1e4
-    fig.suptitle(
-        f"{path.market_name}, seed {path.seed}, {path.n} steps, "
-        f"{bp:.0f} bp, half-width {path.half_width:.2f}. Date {frame} of {path.n}.",
-        fontsize=11,
+    right = 58 if path.variance is not None else 18
+    fig.update_layout(
+        title=dict(
+            text=(
+                f"{path.market_name}, seed {path.seed}, {path.n} steps<br>"
+                f"{bp:.0f} bp, half-width {path.half_width:.2f}, "
+                f"date {frame} of {path.n}"
+            ),
+            font=dict(size=14),
+            x=0,
+            xanchor="left",
+        ),
+        height=700,
+        autosize=True,
+        showlegend=False,
+        margin=dict(l=58, r=right, t=64, b=42),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        font=dict(size=11, color="#111827"),
+        hovermode="x unified",
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    _grids(fig)
     return fig
 
 
 def draw_batch(path: LivePath, score: BatchScore) -> Figure:
     """Histogram of the two books, with this path marked."""
-    fig, ax = plt.subplots(figsize=(8.6, 3.6))
+    fig = go.Figure()
     pooled = np.concatenate([score.pnl_band, score.pnl_delta])
-    lo, hi = np.quantile(pooled, [0.005, 0.995])
+    lo = float(np.quantile(pooled, 0.005))
+    hi = float(np.quantile(pooled, 0.995))
     if hi - lo < 1e-9:
         lo, hi = lo - 1.0, hi + 1.0
-    bins = np.linspace(lo, hi, 61)
-    ax.hist(
-        score.pnl_delta, bins=bins, density=True, color=_DELTA, alpha=0.45, label="delta hedging"
+    bins = dict(start=lo, end=hi, size=(hi - lo) / 60.0)
+    fig.add_trace(
+        go.Histogram(
+            x=score.pnl_delta,
+            name="delta hedging",
+            histnorm="probability density",
+            xbins=bins,
+            marker_color="rgba(75, 85, 99, 0.45)",
+        )
     )
-    ax.hist(score.pnl_band, bins=bins, density=True, color=_BAND, alpha=0.55, label="band")
-    ax.axvline(path.delta_hedge.pnl[-1], color=_DELTA, lw=1.2, ls="--")
-    ax.axvline(path.band.pnl[-1], color=_BAND, lw=1.4)
-    ax.set_xlabel("terminal P&L, time-0 money")
-    ax.set_ylabel("density")
-    ax.set_title(f"Same hedgers on {score.m} paths. Lines are this path.")
-    ax.legend(frameon=False, fontsize=8)
-    _style(ax)
-    fig.tight_layout()
+    fig.add_trace(
+        go.Histogram(
+            x=score.pnl_band,
+            name="band",
+            histnorm="probability density",
+            xbins=dict(bins),
+            marker_color="rgba(194, 65, 12, 0.55)",
+        )
+    )
+    fig.add_vline(
+        x=float(path.delta_hedge.pnl[-1]),
+        line=dict(color=_DELTA, width=1.5, dash="dash"),
+    )
+    fig.add_vline(x=float(path.band.pnl[-1]), line=dict(color=_BAND, width=1.6))
+    fig.update_layout(
+        barmode="overlay",
+        title=dict(
+            text=f"Same hedgers on {score.m} paths. Lines are this path.",
+            font=dict(size=14),
+            x=0,
+            xanchor="left",
+        ),
+        height=340,
+        autosize=True,
+        margin=dict(l=52, r=16, t=56, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=11)),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        font=dict(size=11, color="#111827"),
+        xaxis_title="terminal P/L, time-0 money",
+        yaxis_title="density",
+    )
+    _grids(fig)
     return fig
