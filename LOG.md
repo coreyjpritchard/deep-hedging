@@ -8,11 +8,76 @@ compared with the learned hedge on Black-Scholes in `sessions/03_whalley_wilmott
 That file is roadmap item 02. The box stays open until Corey works through it.
 File `sessions/02_cost_models.py` is the cost-model picture, not that question.
 The Heston and rough Bergomi research comparison is on hold.
-The playground is `playground/app.py`, a marimo app. The markets, the costs,
-the P&L and the networks are `deephedge`. Train and test are two radio cards.
-**Next:** Corey tries the playground locally. The research comparison, the same
-four hedgers under Heston and then rough Bergomi via `roughvol`, stays the next
-research session when that hold lifts.
+The playground is `playground/app.py`. The live view is `playground/live.py`.
+The lessons that build a network up to that view are `LEARN.md`. None of
+them is built, and no roadmap box is closed by them.
+**Next:** Corey walks lesson 1 in `LEARN.md`, the P/L as gains minus costs.
+The research comparison stays the next research session when that hold lifts.
+
+## 2026-10-13 The chart was a file the next tick deleted
+
+The broken picture on the phone was a marimo virtual file. `mo.image` on the
+PNG registers a relative URL `./@file/{length}-{token}.png`. The caption
+travels in the cell output. The picture is a second request. The next date
+disposes that file, so a fetch still in flight comes back 404 and the browser
+shows the alt text. That is the usual case on a half-second clock over a
+remote link. Localhost hides it, because the fetch finishes first.
+
+The figure is now a plotly graph in that same cell output, beside the caption.
+A 350 ms delay and a slow link still advanced the date, and the page requested
+no `/@file/` URL. The controls are a column and the button row wraps. On a
+390 px screen the widest control ends inside the viewport.
+
+The Heston dropdown was the 2019 market, xi = 2. On a 30-day grid the
+full-truncation variance hits zero and stays there. On 500 paths, 44% of
+dates are on the floor and 72% of paths touch it. Seed 7, the default, freezes
+early. At date 16 the spot is 100.45, the variance is 0, and the cosine delta
+is 1.016. A vanilla call with no dividends has delta between 0 and 1. The
+excess is the cosine expansion on a zero variance and a short maturity. On
+that path it reaches 1.081 at the last date. The live book clips the greek to
+the interval from 0 to 1, and the caption quotes the raw value when it fell
+outside. `Heston()` is unchanged, at xi = 2.
+
+The dropdown keeps the other 2019 parameters and uses xi = 0.5. On 400 paths
+about 0.4% of dates are at zero and 3% of paths touch it. Seed 7 stays clear
+of the floor. At date 16 the variance is 0.0017 and the delta is 0.987. The
+path finishes at 0.069 for the band and 0.036 for delta, with the spot at
+103.42 and a premium of 2.237. On 2,000 paths (seed 10014) the band's entropic
+risk at lambda 1 is 1.113 (standard error 0.022) against 1.641 (standard error
+0.022). The mean P/L is -0.827 (standard error 0.016) against -1.392 (standard
+error 0.015). The histogram quoted just below was xi = 2.
+
+## 2026-10-13 One path, then the histogram
+
+The picture is `playground/live.py`. One path steps forward. The band
+holding sits still while delta stays inside the half-width, and a dot
+marks each date it is pushed back to the edge. Cash, costs and the hedge
+P/L update on that date. Delta hedging is the same account with half-width
+zero. At the last date a button scores 2,000 fresh paths. The terminal
+number on the path is `terminal_pnl`.
+
+Default controls: Black-Scholes, seed 7, 30 steps, 50 bp, half-width 0.10.
+The spot ends at 87.66 and the call pays nothing. The band trades on 16
+of the 30 hedging dates and finishes at -0.875. Delta hedging trades on
+28 and finishes at -0.485. Costs are 0.419 against 0.753. On this path
+the band loses more, because it does not follow the spot down.
+
+The button draws seed 10014, which is the path seed plus 10007. On 2,000
+Black-Scholes paths the band's entropic risk at lambda 1 is 1.062
+(standard error 0.019) against 1.540 (standard error 0.017) for delta.
+The mean P/L is -0.812 (standard error 0.015) against -1.364 (standard
+error 0.012). The path and the sample disagree on which hedge lost more.
+That is the reason the histogram is on the same page.
+
+The same controls on Heston, premium 1.692. This path (seed 7) finishes
+at 0.555 for the band and -0.013 for delta, with the spot at 100.45. On
+2,000 paths (seed 10014) the means are -1.036 (standard error 0.036) and
+-1.425 (standard error 0.038). The entropic risks are 3.267 (standard
+error 0.122) and 3.605 (standard error 0.171). The mean gap is several
+standard errors. The entropic gap is about one and a half combined
+standard errors, so it is only a direction. The next specification, if
+that ranking is the question, is a larger Heston sample. The live view
+does not trade the variance swap.
 
 ## 2026-10-11 The playground is one Python program
 
