@@ -1,7 +1,10 @@
 """Transaction costs. Pluggable, and independent of the volatility model.
 
-The P&L engine calls `amount` with discounted instrument prices, so the
-number it returns is already in time-0 money. Positions have shape
+The P&L engine calls `amount` with discounted instrument prices, so a
+charge on the price basis is already in time-0 money. The fixed charge
+and a numeric `unit` are cash on the day of the trade and are not
+discounted, so the whole amount is in time-0 money only for the price
+basis or when `r = 0`. Every session uses `r = 0`. Positions have shape
 `(m, n, d)`. The book is flat before the first date and flat again at
 maturity, and both of those trades are charged. Liquidation is not
 optional: a position held to expiry pays the closing trade.

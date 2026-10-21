@@ -51,8 +51,11 @@ than session 01.
 
 - At 50 bp the network's entropic risk is 1.05 against 1.54 for delta. Under a
   quadratic impact of 0.02 it is 0.94 against 2.46. Both show a no-trade band.
-- A fixed charge of 0.05 per trade does not. The network trades on 28 per cent of
-  dates against delta's 93 per cent, and its entropic risk is 1.79 against 1.61.
+- Under a fixed charge of 0.05 per trade this network does not beat delta: entropic
+  risk 1.79 against 1.61. It never holds exactly still, so the exact charge falls
+  on 97 per cent of its trade slots, while the tanh surrogate it was trained on
+  charged those small changes almost nothing. That mismatch, not the fixed cost
+  itself, is what the run shows.
 - On Heston, 50 bp on the swap's mark leaves the network holding mean absolute
   swap weight 232. Charging 0.002 per contract, it holds 0.005. The model hedge,
   which keeps the swap, has mean P&L -7.34 under that charge.
@@ -119,7 +122,8 @@ on four cores.
 - `deephedge/costs.py` proportional, fixed-plus-proportional and quadratic costs.
   A `unit` is the notional the charge multiplies when the mark is the wrong one.
 - `deephedge/export.py` schema `deephedge.hedge/v1`, a compact JSON of paths,
-  positions and P&L. The example is `docs/examples/bs_delta_50bp.json`.
+  positions and P&L. The example is `docs/examples/bs_delta_50bp.json`. The schema
+  is provisional, not frozen.
 - `deephedge/heston.py` the Heston market: full truncation Euler, a variance swap,
   and the characteristic-function price and hedge.
 - `deephedge/markets.py` the Black-Scholes path simulator the environment draws from.
