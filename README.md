@@ -34,6 +34,9 @@ figure, an indifference price of 1.94 at 50% CVaR.
 - The model hedge (delta, plus a variance swap hedging vega) has mean P&L -0.03,
   standard deviation 0.40, CVaR 0.30. The network has -0.01, 0.44, 0.31. The two
   histograms overlap. Premium plus CVaR is 1.99 and 2.00, against the paper's 1.94.
+  The network does not beat the model hedge. The 0.05 gap is the coarse variance
+  step: simulated on 480 steps and hedged on the same 30 dates, the model hedge gives
+  1.934.
 - Delta with no variance swap has standard deviation 1.56 and CVaR 1.28. The tight
   hedge is the swap.
 - At 100 bp the model hedge's mean falls to -2.79. A network trained at that cost

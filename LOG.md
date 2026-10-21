@@ -40,7 +40,7 @@ The torch P&L now sums several instruments. The one-instrument branch is the
 Black-Scholes training loss, unchanged. On two instruments, two rates, float64,
 it matches `terminal_pnl` to 1e-10, and the payoff is charged once.
 
-Session 01 reproduces their Figure 2: the histogram of hedging P&L, model hedge
+Session 01 redraws their Figure 2, qualitatively: the histogram of hedging P&L, model hedge
 against the network, both sold at the model price, zero cost. Their figure uses
 an exact CIR draw, a simplified Broadie-Kaya spot, a network with separate weights
 on each date, and one million paths. This one uses full truncation, one shared
@@ -57,8 +57,18 @@ sample:
 Premium plus CVaR is an indifference price of 1.99 for the model hedge and 2.00
 for the network. Their Figure 2 overlaps in the same way, and their indifference
 price at alpha 0.5 is 1.94, sold at 1.69. The overlap is what this sample shows.
-The 0.05 gap on the indifference price is not the standard error of the mean,
-which is about 0.003. Their variance is exact. This one is truncated.
+The network does not beat the model hedge (2.00 against 1.99). The 0.05 gap on
+the indifference price is not noise: a bootstrap standard error of each CVaR is
+about 0.004.
+
+The gap is the coarse variance step, checked once outside the session. Same seed,
+variance simulated on 480 steps, hedge on every 16th date (the same 30 dates): the
+model hedge's premium plus CVaR is 1.934, and 1.936 on 1920 steps. The network
+trained on 30-step paths scores 1.971 there, about 0.04 behind the model hedge. On
+the 30-step grid the variance sits at zero on 45 per cent of hedging dates, and
+the variance swap's mark is not a discrete martingale: its mean at maturity exceeds
+its inception price by 2.4e-4, about 7 per cent of the mark and 6.5 standard
+errors. On 480 steps the drift is within noise; the martingale test runs there.
 
 At 100 bp the model hedge, which keeps the zero-cost weights, has mean -2.79 and
 CVaR 3.50. The network trained at 100 bp has mean -0.42, standard deviation 1.77
