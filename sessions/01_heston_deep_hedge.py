@@ -240,9 +240,24 @@ def _(mo):
     $0.44$ and $0.31$. Premium plus CVaR is an indifference price of
     $1.99$ for the model hedge and $2.00$ for the network, against their
     $1.94$. The histograms overlap, which is what their figure shows. The
-    standard error of the mean is about $0.003$, so the $0.05$ gap against
-    $1.94$ is not the noise of this sample. Their scheme draws the CIR
-    variance exactly. This one truncates it.
+    network does not beat the model hedge: $2.00$ against $1.99$. A
+    bootstrap standard error of each CVaR is about $0.004$, so the $0.05$
+    gap against $1.94$ is not the noise of this sample.
+
+    The gap is the coarse variance step. Simulate the same seed on 480
+    steps and keep every 16th date, so the hedge still trades on the same
+    30 dates, and the model hedge's premium plus CVaR is $1.934$. On 1920
+    steps it is $1.936$. The network trained on 30-step paths scores
+    $1.971$ on the 480-step paths, so there it trails the model hedge by
+    about $0.04$. On the 30-step grid full truncation holds the variance
+    at zero on 45 per cent of hedging dates, and the variance swap's mark
+    is not a discrete martingale: its mean at maturity exceeds its price
+    at inception by $2.4 \times 10^{-4}$, about 7 per cent of the mark and
+    6.5 standard errors. On 480 steps that drift is within noise, and 480
+    steps is the grid on which the martingale test in
+    `tests/test_heston.py` runs. These sub-stepped numbers come from a
+    one-off check outside this session; the session itself simulates on
+    the 30 hedging dates.
 
     The grey histogram is the control. Delta alone, no variance swap, has
     standard deviation $1.56$ and CVaR $1.28$. The tight blue and red
@@ -293,9 +308,10 @@ def _(mo):
                 "1.99 for the model hedge on this sample: the quadrature premium 1.692 "
                 "plus a CVaR of 0.30. The network is 2.00. Their printed risk-neutral "
                 "price is 1.69, and 1.692 rounds to that. The indifference prices "
-                "differ by about 0.05. The mean here is estimated to a standard error "
-                "of about 0.003, so the gap is the scheme: full truncation Euler on "
-                "30 dates, against their exact CIR draw."
+                "differ by about 0.05. The CVaR here has a bootstrap standard error "
+                "of about 0.004, so the gap is not noise. It is the coarse variance "
+                "step: simulated on 480 steps and hedged on the same 30 dates, the "
+                "model hedge gives 1.934."
             ),
         }),
     ])
