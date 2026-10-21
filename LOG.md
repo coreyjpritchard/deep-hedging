@@ -12,10 +12,14 @@ File `sessions/02_cost_models.py` is the cost-model picture, not that question.
 ## 2026-10-11 The Whalley-Wilmott band is right where the cost is small
 
 The picture is `sessions/03_whalley_wilmott.py`. On Black-Scholes, with a
-proportional cost only, the learned cloud has the gamma shape across the spot
-and about half the asymptotic width. At 120 steps and 5 to 25 bp that cloud
-scales close to a cube root of the cost. At 30 steps and 25 to 200 bp it does
-not. The decision rule stays soft. A gamma feature does not sharpen it.
+proportional cost only, the learned cloud tracks the asymptotic width across
+the spot (correlation 0.998 at 30 steps and 50 bp), but so does the cloud of a
+constant-width band, so that is not evidence of a gamma-shaped band. Cloud to
+cloud, the network's is 0.50 to 0.64 of the Whalley-Wilmott hedger's. At 120
+steps and 5 to 25 bp its cost exponent is 0.293, above the 0.227 of the
+Whalley-Wilmott hedger's own cloud on the same grid. At 30 steps and 25 to
+200 bp both are close to flat (0.063 and 0.041). The decision rule stays soft.
+A gamma feature does not sharpen it.
 
 The half-width is Whalley and Wilmott (1997), equation (17) and section 4.
 A trade of N shares loses epsilon N S, which is `ProportionalCost(epsilon)`.
@@ -73,9 +77,27 @@ trade below 0.005 shares is a different object: it stays under 0.05 and its
 log-log slope is steep, because a steeper soft rule remains inside that
 tolerance farther from the centre. It is not the cube-root test.
 
+The analytic 1/3 is the wrong yardstick for a cloud on a discrete grid. The
+same cloud measured on the Whalley-Wilmott hedger, which trades to the edge of
+the analytic band on the same paths, has exponent 0.227 at 120 steps
+(lack-of-fit standard error 0.033) and 0.041 at 30 steps (0.007). So the
+network's 120-step cloud scales more like a cube root than the asymptotic
+rule's own cloud does, and the flat 30-step cloud is what the asymptotic rule
+shows on that grid too. The gaps from 1/3 above measure the grid as well as
+the network. These reference values come from a one-off check outside the
+session.
+
 Across spot, in bins from 85 to 115, the 30-step cloud at 50 bp correlates
-0.998 with the asymptotic width, at about half its level (median ratio 0.54).
-The shape is learned. The level and the large-cost scaling are not.
+0.998 with the asymptotic width, at 0.54 of its level (median ratio). That
+correlation does not show a learned gamma shape: on the same paths the cloud
+of the constant-width band, whose half-width does not depend on the spot,
+correlates 0.974 to 0.998 with the asymptotic width across the eight rows,
+because delta moves by about gamma times the spot move between dates. The
+level is not a band's level either. The Whalley-Wilmott hedger's own cloud is
+0.59 to 0.92 of its analytic half-width, and the network's cloud is 0.50 to
+0.64 of the Whalley-Wilmott hedger's cloud. Against the analytic width the
+network's median ratio is 0.37 to 0.63 across the eight rows, not a constant
+half.
 
 The slope of the chosen position with respect to the incoming position, at
 the centre, runs from 0.60 to 0.85 on the 30-step grid and from 0.66 to 0.89

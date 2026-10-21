@@ -64,16 +64,21 @@ Findings from session 03, seed 12345, 20 000 Black-Scholes paths, proportional
 cost only, entropic risk at lambda 1. Roadmap item 02. The 30-step network is
 the session 00 one.
 
-- The cloud of holdings near the money has the gamma shape (correlation about
-  0.99 across spot at 50 bp) and about half the Whalley-Wilmott width.
+- The cloud of holdings tracks the Whalley-Wilmott width across spot
+  (correlation 0.998 at 30 steps and 50 bp), but the cloud of a constant-width
+  band scores 0.974 to 0.998 too, so this does not show a gamma-shaped band. At
+  that row the cloud is 0.54 of the analytic width. Against the Whalley-Wilmott
+  hedger's own cloud it is 0.50 to 0.64 across the grid.
 - Its cost exponent is 0.293 at 120 steps and 5 to 25 bp (bootstrap standard
   error 0.007; lack-of-fit standard error 0.028). At 30 steps and 25 to 200 bp
   the exponent is 0.063 (bootstrap standard error 0.006). The analytic exponent
-  is 1/3.
+  is 1/3, but the Whalley-Wilmott hedger's own cloud, measured the same way, has
+  0.227 at 120 steps and 0.041 at 30 steps. The discrete grid lowers both.
 - At 5 bp the asymptotic band and a tuned constant width tie, near entropic
-  risk 0.165, and both beat the network (0.175) and delta (0.244). At 200 bp
-  the network (3.35) beats the constant band (3.72) and the asymptotic band
-  (4.37). Delta is 6.83.
+  risk 0.165, and both beat the network (0.175) and delta (0.244). At 30 steps
+  and 50 bp the asymptotic band (1.141) is worse than the tuned constant width
+  (1.055) and the network (1.052). At 200 bp the network (3.35) beats the
+  constant band (3.72) and the asymptotic band (4.37). Delta is 6.83.
 - Adding gamma as a feature does not sharpen the rule or move these numbers.
   The previous position was already an input.
 

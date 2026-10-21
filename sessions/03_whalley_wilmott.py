@@ -189,9 +189,10 @@ def _(
         _k = _n // 2
         _spot = rows[(_n, _costs[0])]["spot_mid"]
         _delta = rows[(_n, _costs[0])]["delta_mid"]
+        # The analytic half-width at the money, not a cloud of WW holdings.
         _ww = [rows[(_n, _c)]["ww_atm"] for _c in _costs]
         _ww_fit = fit_power_exponent(_costs, _ww)
-        fits[(_n, "ww", "cloud")] = {
+        fits[(_n, "ww", "analytic")] = {
             "exponent": _ww_fit["exponent"],
             "lack_of_fit_se": _ww_fit["se"],
             "bootstrap_se": 0.0,
@@ -474,7 +475,7 @@ def _(book, mo):
     _ratio_g = book["rows"][(30, 0.005)]["snap"]["gamma"]["spot_ratio"]
     _nt = _fit(30, "mlp", "no_trade")
     _nt120 = _fit(120, "mlp", "no_trade")
-    _ww_fit = _fit(120, "ww", "cloud")
+    _ww_fit = _fit(120, "ww", "analytic")
     _mean_costs = ((120, 0.0005), (120, 0.0025), (30, 0.005), (30, 0.02))
     _mean_ok = all(
         book["rows"][key]["scores"][name]["mean"] > book["rows"][key]["scores"]["delta"]["mean"]
@@ -605,7 +606,7 @@ the hedger trades to the nearer edge, not to delta.
 
 The analytic exponent is {_ww_fit['exponent']:.2f}, with lack-of-fit standard
 error {_ww_fit['lack_of_fit_se']:.2f}. That is the identity in hypothesis 1, on
-both grids.
+both grids. It is the exponent of the formula at the money, not of a cloud.
 
 The 120-step cloud, session 00 inputs, has exponent {_exp(120, "mlp")}. The
 gap from 1/3 is {_gap120:+.3f}, which is {_boot_units:.1f} bootstrap standard
@@ -620,6 +621,16 @@ lack-of-fit standard errors. Those widths are flat. With gamma as an input the
 exponents are {_exp(120, "gamma")} at 120 steps and {_exp(30, "gamma")} at 30
 steps. That input does not move the cloud onto a cleaner cube root.
 
+The analytic 1/3 is the wrong yardstick for a cloud on a discrete grid. The
+same cloud measured on the Whalley-Wilmott hedger, which trades to the edge of
+the analytic band on these paths, has exponent 0.227 at 120 steps
+(lack-of-fit SE 0.033) and 0.041 at 30 steps (lack-of-fit SE 0.007). So the
+network's 120-step cloud scales more like a cube root than the asymptotic
+rule's own cloud does, and the flat 30-step cloud is what the asymptotic rule
+shows on that grid too. The gaps from 1/3 above measure the grid as well as
+the network. These two reference values come from a one-off check outside
+this session; the cells above do not compute them.
+
 The no-trade half-width, defined as the largest deviation from the centre that
 still trades less than 0.005 shares, is a different object. Its exponent is
 {_nt['exponent']:.2f} (lack-of-fit SE {_nt['lack_of_fit_se']:.2f}) at 30 steps
@@ -629,10 +640,18 @@ from the centre, so this exponent can be large while the cloud is flat. It is
 not the cube-root test.
 
 Across spot, at 30 steps and 50 bp, the cloud in bins from 85 to 115 correlates
-{_corr_50:.2f} with the asymptotic width, at {_ratio_50:.2f} of its level. With
-the gamma input the correlation is {_corr_g:.2f} and the ratio is
-{_ratio_g:.2f}. The shape across spot is the gamma shape. The level is lower,
-and at 30 steps it does not grow like a cube root.
+{_corr_50:.3f} with the asymptotic width, at {_ratio_50:.2f} of its level. With
+the gamma input the correlation is {_corr_g:.3f} and the ratio is
+{_ratio_g:.2f}. That correlation does not show that the learned band has the
+gamma shape. On the same paths the constant-width band, whose half-width does
+not depend on the spot, has a cloud that correlates 0.974 to 0.998 with the
+asymptotic width across the eight rows, because delta moves by about gamma
+times the spot move between dates and every band's cloud follows that. The
+level is not a band's level either: the Whalley-Wilmott hedger's own cloud is
+0.59 to 0.92 of its analytic half-width, and the network's cloud is 0.50 to
+0.64 of the Whalley-Wilmott hedger's. These comparisons come from the same
+one-off check. At 30 steps the network's cloud does not grow like a cube root,
+and neither does the Whalley-Wilmott hedger's.
 
 The slope of the decision rule at the centre runs from {_slopes_30[0]:.2f} to
 {_slopes_30[-1]:.2f} on the 30-step grid and from {_slopes_120[0]:.2f} to
