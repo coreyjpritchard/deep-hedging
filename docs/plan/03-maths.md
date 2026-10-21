@@ -126,7 +126,9 @@ hedging, which is the point of putting them in the lab.
   with absolute risk aversion `lam`, and Black-Scholes dynamics with `mu = r`. On other
   generators the lab computes it from that generator's gamma and labels it "WW formula
   with model gamma". PR 3's fitted exponent (0.293 at 120 steps, 0.063 at 30 steps) is
-  the regression test.
+  the regression test. On a discrete grid the yardstick is the Whalley-Wilmott hedger's
+  own cloud exponent on the same grid (0.227 at 120 steps, 0.041 at 30 steps, M00
+  review), not the continuous-time 1/3.
 - Constant band: `clip(prev, delta - w, delta + w)` with `w` chosen on the validation
   split only.
 - Static replication (later wave, not in the first release, D6): for a European payoff `g(S_T)` and a strike grid `K_j`, weights
