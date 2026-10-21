@@ -2,7 +2,8 @@
 
 Status: planning document, no code. Written on branch `plan/fable-v1` on 21 October 2026.
 Detailed module cards, interface signatures, the maths and the regime experiment are in
-`docs/plan/`. This file is the summary and the decisions.
+`docs/plan/`. This file is the summary and the decisions; the owner's answers to the planning
+questions are recorded in section 10 (decisions, owner, 2026-10-21).
 
 Note on tooling: Fable (the planning model used to write this document) is disabled for
 this repository once this PR merges. Cursor cloud agents build the modules, Claude Opus
@@ -27,7 +28,9 @@ graph spec.
 **Recommendation: option C.** A typed JSON graph spec (`deephedge.graph/v1`) is the
 single source of truth; a Python engine compiles and runs it; the first UI is marimo
 (extending the PR 4 playground); a React Flow web canvas over a FastAPI job runner is a
-later, optional module that reads and writes the same spec.
+later, optional module that reads and writes the same spec. Owner decision (D1): marimo
+stays the first UI, and M20 is deferred until M10 (the evaluator) has landed; it is then
+reconsidered only if the marimo lab feels limiting.
 
 Why not A alone (extend marimo): marimo has no node canvas, and PR 4 already found that a
 true drag-and-drop board means a JavaScript widget. Marimo is right for the first year
@@ -158,9 +161,9 @@ The shared, typed interface (details in `docs/plan/01-interfaces.md`):
 - Classical hedgers per generator: delta from the pricer's greeks, delta-gamma and
   delta-vega as linear solves against the instrument set's greeks at each step,
   Whalley-Wilmott from the pricer's gamma and the proportional cost rate (the formula is
-  Black-Scholes asymptotics and is reported as such when applied elsewhere), static
-  replication of European payoffs by a strike grid of calls (Carr and Madan) when the
-  instrument set includes listed calls.
+  Black-Scholes asymptotics and is reported as such when applied elsewhere), and, in a
+  later wave after the first release (D6), static replication of European payoffs by a
+  strike grid of calls (Carr and Madan) when the instrument set includes listed calls.
 
 ## 5. Module breakdown
 
@@ -189,7 +192,7 @@ tests and acceptance criteria are in `docs/plan/02-modules.md`.
 | M17 | Sessions 00 to 03 reproduced on the engine; weights regenerated; docs | M09, M10 | Cursor | script (regression tests) |
 | M18 | Pre-registered regime experiment runner (`experiments/regime/`) | M10, M12 | Cursor | Opus (gate logic) |
 | M19 | Paper SPX hedger from daily IBKR snapshots (no orders) | M13, M09 | Cursor | Opus |
-| M20 | Web canvas (React Flow + FastAPI), optional, later | M09, M10 | Cursor | owner |
+| M20 | Web canvas (React Flow + FastAPI), deferred (D1): reconsidered after M10 lands | M09, M10 | Cursor | owner |
 
 Module count: 21 entries including M00; 20 build modules.
 
@@ -220,7 +223,9 @@ Waves (max three Cursor agents at once, so reviews keep up):
 4. M09 alone (integration), then M10.
 5. M12, M13, M15, M17 in parallel.
 6. M16, M18, M19.
-7. M20 whenever the spec has been stable for a month.
+7. M20 is deferred (D1). Once M10 has landed, the owner decides whether the marimo lab
+   feels limiting; only then does M20 start, and only on a spec that has been stable for a
+   month.
 
 ## 6. The five draft PRs
 
@@ -229,13 +234,14 @@ Full reasoning in `docs/plan/05-existing-prs.md`.
 | PR | Recommendation |
 |---|---|
 | #1 Shared market environment, Heston, session 01 | **Merge after review** (rebase on main). It is the base of the stack and its `Market`, `Paths`, `Environment`, `terminal_pnl` are what M02 generalises. Known debts carried into M02: call-only pricing, `price_along` and `benchmark_positions` mandatory, no torch method on `Environment`. |
-| #2 Pluggable costs, export schema, session 02 | **Rebase and merge** once #1 is in. `costs.py` becomes M04's starting point. `export.py`'s `deephedge.hedge/v1` stays as the per-run P&L artefact. Fix later in M04: fixed cost not discounted; `unit` for the variance swap documented as a notional. |
+| #2 Pluggable costs, export schema, session 02 | **Rebase and merge** once #1 is in. `costs.py` becomes M04's starting point. `export.py`'s `deephedge.hedge/v1` is a starting point, not a frozen schema (D3): M09 may replace it with its own run-store layout. Fix later in M04: fixed cost not discounted; `unit` for the variance swap documented as a notional. |
 | #3 Whalley-Wilmott band, session 03 | **Rebase and merge** once #2 is in: it is a finished session with a logged result (the fitted exponent 0.293 at 120 steps). `band.py` is then folded into M08 as a policy that takes gamma from any pricer; the Black-Scholes-only functions stay as the reference implementation in tests. |
-| #4 Marimo playground, uploads, bootstrap, GRU | **Do not merge as is; fold.** `upload.py`, `bootstrap.py`, `merton_jump.py` go to M14; `GRUPolicy` and `reset_state` go to M05; `PlaygroundSpec` is replaced by the graph spec (M01) and `run_experiment` by the engine (M09); `playground/app.py` is rewritten as M15 over the spec. Close the PR when M14 and M15 merge, crediting it in LOG.md. |
-| #5 Live view and LEARN.md | **Fold.** `live.ledger` and `Book` become the step-by-step accounting in M16, generalised to any policy, cost model and instrument set via the engine; `LEARN.md` can merge on its own as a docs-only PR now (it references exercise files that do not exist; mark them as planned). Close the PR when M16 merges. |
+| #4 Marimo playground, uploads, bootstrap, GRU | **Do not merge as is; fold.** `upload.py`, `bootstrap.py`, `merton_jump.py` go to M14; `GRUPolicy` and `reset_state` go to M05; `PlaygroundSpec` is replaced by the graph spec (M01) and `run_experiment` by the engine (M09); `playground/app.py` is rewritten as M15 over the spec. Stays open as a draft until M14 and M15 absorb it (D2); only then close it, crediting it in LOG.md. |
+| #5 Live view and LEARN.md | **Fold.** `live.ledger` and `Book` become the step-by-step accounting in M16, generalised to any policy, cost model and instrument set via the engine; `LEARN.md` can merge on its own as a docs-only PR (it references exercise files that do not exist; mark them as planned). Stays open as a draft until M16 absorbs it (D2); only then close it, crediting it in LOG.md. |
 
 Order of operations: merge #1, #2, #3 in sequence (each is stacked on the previous), then
-open M01. Do not merge #4 or #5 onto main: their engine code would be rewritten within
+open M01. #4 and #5 stay open as drafts until M14 to M16 absorb them (D2). Do not merge
+#4 or #5 onto main: their engine code would be rewritten within
 weeks and their weights and PNGs add 20 binary files.
 
 ## 7. Model and tool assignment, with a token-cost note
@@ -261,7 +267,9 @@ Full mapping in `docs/plan/04-regime-experiment.md`. In short:
 
 - Generator node: `regime_bergomi` wrapping `volsurface.markets.RegimeSwitchingBergomi`
   with `RegimeSpec(Q = [[-1.5, 1.5], [0.8, -0.8]], nu = (1.5, 3.0), p0 = (0.7, 0.3))`,
-  `H = 0.1`, `rho = -0.4`, `xi0 = 0.04`, `price_filter = "rv"`. Seeds come from
+  `H = 0.1`, `rho = -0.4`, `xi0 = 0.04`, `price_filter = "rv"`. The engine accepts the
+  volsurface `MarketPaths` directly, passed through in `Paths.source`, so the surface
+  batches for H3 are kept (D4). Seeds come from
   `volsurface.markets.run_seed(entropy, split)`, never from the engine's own seeding.
 - Contract nodes: `L1` (ATM call, 21 trading days from the episode start at t0 = 0.5)
   and `L2` (forward-start ATM straddle, 15 days forward, 30 days life).
@@ -304,38 +312,40 @@ Full mapping in `docs/plan/04-regime-experiment.md`. In short:
 - **Weights in git.** PRs already add dozens of `.pt` files. Mitigation: M09's run store
   writes under `runs/` (git-ignored) and only the session caches needed for the static
   docs are committed, regenerated by script.
-- **SPX paper hedger.** IBKR snapshot access and a daily job are outside this repo's
-  current scope; M19 is last and must never place an order.
+- **SPX paper hedger.** The daily IBKR snapshot job stays outside this repository (D8);
+  M19 only reads recorded snapshots, is last, and must never place an order.
 
-## 10. Open questions for the owner
+## 10. Decisions (owner, 2026-10-21)
 
-1. Do you want the first UI to stay marimo for at least the next six months, so that
-   M20 is explicitly deferred, or should M20 start as soon as M10 lands?
-2. Should PR 4 and PR 5 be closed now with a LOG.md credit, or left open as draft until
-   M14 to M16 absorb them?
-3. Is the `deephedge.hedge/v1` export schema from PR 2 something you want to keep stable
-   for a future web client, or may M09 replace it with a run-store layout of its own?
-4. For the regime experiment, do you want the engine to accept the volsurface
-   `MarketPaths` object directly, or should the adapter convert to the engine's `Paths`
-   and drop fields the engine does not use? Conversion is simpler; passing through keeps
-   the surface batches for H3.
-5. Which Hurst exponent should the default rough Bergomi lab preset use, 0.1 (PREREG) or
-   0.07 (closer to the realised-variance estimates)? The roadmap's session 05 question
-   depends on the choice.
-6. Do you want the static replication block (Carr and Madan over a strike grid) in the
-   first release, or is it a wave 5 item? It is the only classical block that needs a
-   listed-call instrument set.
-7. May the engine depend on `iisignature` or `signatory` for signature features, or
-   should M06 implement truncated level-2 and level-3 signatures by hand to keep the
-   dependency list short?
-8. For the SPX route, is the committed `SPX_2026-10-14.parquet` snapshot in volsurface
-   acceptable as the lab's default, and should the daily IBKR snapshot job live in
-   volsurface rather than here?
-9. What is the wall-clock budget for a default lab run on your server? The plan assumes
-   under two minutes for 2,000 paths and 20 epochs on four cores and under five minutes
-   for any committed session cache.
-10. Should `exercises/` and the `--impl` test switch survive the restructure, with the
-    exercise functions re-keyed to the new module names?
+The planning questions were answered by the owner on 21 October 2026. Each answer is a
+decision, cited as D1 to D10 where the plan depends on it.
+
+1. **D1 UI.** Marimo stays the first UI. M20 (React Flow plus FastAPI canvas) is deferred
+   until M10 (the evaluator) has landed, and is then reconsidered only if the marimo lab
+   feels limiting.
+2. **D2 PRs 4 and 5.** Both stay open as drafts until M14 to M16 absorb them. Each is
+   closed with a LOG.md credit only then.
+3. **D3 Export schema.** The `deephedge.hedge/v1` schema from PR 2 is not frozen; M09 may
+   replace it with its own run-store layout.
+4. **D4 Regime experiment input.** The engine accepts volsurface's `MarketPaths` directly
+   (pass-through in `Paths.source`), keeping the surface batches for H3.
+5. **D5 Hurst preset.** The rough Bergomi default preset is `H = 0.1`, matching the
+   PREREG, exposed as an adjustable parameter. The empirical reference is the author's
+   own estimates in the rough-volatility repo: H about 0.148 on Oxford-Man rv5 (SE about
+   0.013) and about 0.167 on SPX (0.115 to 0.207 across windows). An earlier draft of
+   this plan said 0.07 was closer to realised-variance estimates; that was wrong. The
+   session 05 sweep over H brackets these values.
+6. **D6 Static replication.** The Carr-Madan static replication block is a later-wave
+   item, not part of the first release.
+7. **D7 Signature features.** M06 implements truncated level-2 and level-3 signatures by
+   hand; no `iisignature` or `signatory` dependency.
+8. **D8 SPX data.** The committed `SPX_2026-10-14.parquet` snapshot in volsurface is the
+   lab's default. The daily IBKR snapshot job stays where it is, outside this repository.
+9. **D9 Run-time budget.** Accepted: a default lab run finishes in under two minutes
+   (2,000 paths, 20 epochs, four cores); committed session caches regenerate in under
+   five minutes.
+10. **D10 Exercises.** `exercises/` and the `--impl` test switch are kept, re-keyed to the
+    new module names (M17).
 
 ## 11. Definition of done
 
@@ -358,5 +368,9 @@ The lab is done when all of the following hold on `main`:
 - The regime experiment runner executes H1 to H3 end to end on a reduced sample (1k
   paths, 1 seed) in CI and the full sample on demand, writing the gate verdict in the
   PREREG's own vocabulary.
+- A default lab run (2,000 paths, 20 epochs, four cores) finishes in under two minutes
+  and every committed session cache regenerates in under five minutes (D9).
+- `exercises/` and the `--impl exercises` test switch still work, re-keyed to the new
+  module names (D10).
 - `ruff check` is clean, `pytest -m "not slow"` passes in under two minutes, and the
   README describes the lab in one screen.

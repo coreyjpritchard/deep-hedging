@@ -26,6 +26,8 @@ class Paths:
                                            # "regime_prob", "xi", "realised_variance"
     instrument_names: tuple[str, ...]
     feature_names: tuple[str, ...]
+    source: object | None = None           # pass-through of the generator's native
+                                           # object, e.g. volsurface MarketPaths (D4)
     def spot(self) -> np.ndarray            # instruments[:, :, 0]
     def to_torch(self, dtype=torch.float32) -> "TorchPaths"
 ```
@@ -52,7 +54,8 @@ Concrete generators: `BlackScholes`, `Heston` (from PR 1, made to conform), `SAB
 over `roughvol.rbergomi.RoughBergomi`: `Z * forward` as the spot, `state["v"]` as
 variance, optional `state["xi"]`), `RegimeBergomi` (adapter over
 `volsurface.markets.RegimeSwitchingBergomi`: spot, variance, `regime`, `regime_prob`,
-`xi`, with variance-swap marks as a second instrument when asked), `SPXSurface`
+`xi`, with variance-swap marks as a second instrument when asked; the `MarketPaths`
+object is passed through in `Paths.source`, decision D4), `SPXSurface`
 (snapshot to SANOS or SVI surface to Dupire grid to `LocalVol`, or to a calibrated rough
 Bergomi), `UploadedPaths` and `BlockBootstrap` (from PR 4), `UserModule` (from PR 4
 `upload.py`, local use only).

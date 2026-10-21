@@ -129,7 +129,7 @@ hedging, which is the point of putting them in the lab.
   the regression test.
 - Constant band: `clip(prev, delta - w, delta + w)` with `w` chosen on the validation
   split only.
-- Static replication: for a European payoff `g(S_T)` and a strike grid `K_j`, weights
+- Static replication (later wave, not in the first release, D6): for a European payoff `g(S_T)` and a strike grid `K_j`, weights
   from the Carr-Madan decomposition `g(S) = g(F) + g'(F)(S - F) + sum g''(K) (K - S)^+ dK
   + sum g''(K) (S - K)^+ dK` discretised on the grid; positions are set at `t_0` and
   held. Needs a listed-call instrument set. Its P&L is premium minus payoff minus the
@@ -140,10 +140,14 @@ hedging, which is the point of putting them in the lab.
 Markov generators (Black-Scholes, Heston, SABR, local vol) need only `(t, S, state, prev)`.
 Rough and regime generators have memory. The lab offers windowed realised volatility,
 the Hamilton filter probability from volsurface, truncated signatures of
-`(t, log S, log v)` over a window (level 2 and 3 by hand, or via a library if the owner
-allows one), and recurrent policies (GRU from PR 4). The roadmap's session 03 question,
-whether a feature-based network loses to a recurrent one as the Hurst exponent falls, is
-a direct comparison of two hedger nodes on one generator node.
+`(t, log S, log v)` over a window (level 2 and 3 by hand, decision D7), and recurrent
+policies (GRU from PR 4). The roadmap's session 05 question, whether the learned band
+scales with the Hurst exponent and whether a feature-based network loses to a recurrent
+one as H falls, is a direct comparison of two hedger nodes on one generator node swept
+over `H`. The default preset is `H = 0.1` (D5, as in the PREREG). The sweep should
+bracket the empirical reference from the rough-volatility repo, H about 0.148 on
+Oxford-Man rv5 (SE about 0.013) and about 0.167 on SPX (0.115 to 0.207 across windows),
+as well as values below 0.1.
 
 ## 8. Honest evaluation
 

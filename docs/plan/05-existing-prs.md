@@ -47,8 +47,8 @@ field for the variance swap is a notional convention that must be named as such 
 spec. The PR body's own note that a charge per unit of variance "should stay out of the
 simulator" is right and M04 keeps it in the cost block.
 
-The export schema is a reasonable per-run P&L artefact. Open question 3 in PLAN.md asks
-whether to keep it stable; the default is to keep it and have M09's run store write it.
+The export schema is a reasonable per-run P&L artefact. Owner decision D3: it is not
+frozen, and M09 may replace it with its own run-store layout.
 
 ## PR 3: Whalley-Wilmott band against the learned hedge (1,821 additions)
 
@@ -85,8 +85,9 @@ uploads (the PR body says so). The static HTML export is a good idea and M15 kee
 The PR's own argument against a JavaScript drag-and-drop board (the author should be able
 to read every part) is the argument for option C in PLAN.md.
 
-Recommended handling: leave the PR open as a reference until M14 and M15 merge, then
-close it with a LOG.md line crediting the upload contract and the GRU policy.
+Decided handling (owner, D2): the PR stays open as a draft until M14 and M15 have
+absorbed it; only then close it, with a LOG.md line crediting the upload contract and the
+GRU policy.
 
 ## PR 5: Live hedging simulation and LEARN.md (1,656 additions, 11 PNGs and a GIF)
 
@@ -107,8 +108,9 @@ positions.
 and `tests/test_learn_band.py`, which are not in the diff. It can merge now as a
 docs-only PR if those references are marked as planned; it does not depend on the engine.
 
-Recommended handling: open a small docs PR for `LEARN.md` from this branch; close #5 when
-M16 merges, with the same LOG.md credit. The PNGs should not land on `main`; M16
+Decided handling (owner, D2): #5 stays open as a draft until M16 has absorbed it; only
+then close it, with the same LOG.md credit. A small docs PR for `LEARN.md` remains an
+option but does not close #5. The PNGs should not land on `main`; M16
 regenerates one screenshot by script.
 
 ## Merge sequence
@@ -117,4 +119,5 @@ regenerates one screenshot by script.
 2. Rebase #2 on `main`, run the suite, merge.
 3. Rebase #3 on `main`, run the suite, merge.
 4. Open M01. From here every change is a module PR against the plan.
-5. Close #4 and #5 when their modules merge.
+5. Keep #4 and #5 open as drafts; close each with a LOG.md credit only once M14 to M16
+   have absorbed it (D2).
