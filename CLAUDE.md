@@ -1,6 +1,6 @@
 # deep-hedging: instructions for builders
 
-Public repository, part of Corey's PhD preparation. The package is `deephedge`. Apps in
+Public repository, a personal research project of Corey's. The package is `deephedge`. Apps in
 `sessions/` and tests in `tests/` import from it and hold no logic of their own. Current
 state and next session are at the top of `LOG.md`.
 
@@ -31,3 +31,5 @@ state and next session are at the top of `LOG.md`.
 
 - Commit directly to `main`. A commit per session, message `sNN: <what it established>`.
 - Tag `sNN` when Corey has worked through the session.
+
+Fable (the planning model) is disabled for this repository once PLAN.md merges; Cursor agents build, Opus reviews.
