@@ -31,3 +31,5 @@ state and next session are at the top of `LOG.md`.
 
 - Commit directly to `main`. A commit per session, message `sNN: <what it established>`.
 - Tag `sNN` when Corey has worked through the session.
+
+Fable (the planning model) is disabled for this repository once PLAN.md merges; Cursor agents build, Opus reviews.
