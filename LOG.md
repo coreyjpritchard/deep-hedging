@@ -198,9 +198,16 @@ lambda 1. Standard errors of the means are under 0.01.
 At S = 100 and t = T/2, moving the incoming position from 0.2 to 0.8 moves the
 chosen position by 0.01 of that gap with no cost, by 0.66 at 50 bp, and by 0.57
 under the quadratic cost. Under the fixed cost the three incoming positions all
-map to about 0.55. The network trades on 28 per cent of dates and delta on 93
-per cent, and the network's entropic risk is worse than delta's. A fixed charge
-does not reward a soft band.
+map to about 0.55, and the network's entropic risk is worse than delta's. Under
+the exact indicator the network's position changes on 97 per cent of trade slots
+and delta's on 99.9 per cent. 15 per cent of the network's changes between open
+and liquidation exceed 0.01 shares, against 80 per cent of delta's. The network
+never holds exactly still, and the indicator charges the full 0.05 on small
+changes that the tanh surrogate charged almost nothing. So this run does not show
+that a fixed charge rewards no band; it shows the surrogate and the policy class
+are the wrong pair for it. An earlier version of this entry said the network
+trades on 28 per cent of dates and delta on 93; those figures were not computed
+by the session and do not reproduce.
 
 On 4 000 Heston paths, same seed, premium 1.692, 50 per cent CVaR. The networks
 are small (width 32, depth 2, 8 000 training paths, 50 epochs). Charged 50 bp on
@@ -215,10 +222,11 @@ with `ProportionalCost` only. The asymptotic half-width is
 `(3/2 * c * S * exp(-r(T-t)) * Gamma^2 / gamma)^(1/3)`, and it belongs on the
 same axes as the learned band in session 00, across spot, time and the
 proportional cost. The fixed charge and the Heston swap are the follow-up: a
-fixed cost does not scale with that cube root, and this sample already shows
-no band under a fixed charge of 0.05.
+fixed cost does not scale with that cube root. The fixed-charge run above shows
+no band, but it is confounded by the training surrogate.
 
 `deephedge/export.py` writes schema `deephedge.hedge/v1` for a future widget.
+The schema is provisional, not frozen: a later run-store layout may replace it.
 The example is `docs/examples/bs_delta_50bp.json`.
 
 ## 2026-10-11 Heston on the same interface, session 01
@@ -254,7 +262,7 @@ The torch P&L now sums several instruments. The one-instrument branch is the
 Black-Scholes training loss, unchanged. On two instruments, two rates, float64,
 it matches `terminal_pnl` to 1e-10, and the payoff is charged once.
 
-Session 01 reproduces their Figure 2: the histogram of hedging P&L, model hedge
+Session 01 redraws their Figure 2, qualitatively: the histogram of hedging P&L, model hedge
 against the network, both sold at the model price, zero cost. Their figure uses
 an exact CIR draw, a simplified Broadie-Kaya spot, a network with separate weights
 on each date, and one million paths. This one uses full truncation, one shared
@@ -271,8 +279,18 @@ sample:
 Premium plus CVaR is an indifference price of 1.99 for the model hedge and 2.00
 for the network. Their Figure 2 overlaps in the same way, and their indifference
 price at alpha 0.5 is 1.94, sold at 1.69. The overlap is what this sample shows.
-The 0.05 gap on the indifference price is not the standard error of the mean,
-which is about 0.003. Their variance is exact. This one is truncated.
+The network does not beat the model hedge (2.00 against 1.99). The 0.05 gap on
+the indifference price is not noise: a bootstrap standard error of each CVaR is
+about 0.004.
+
+The gap is the coarse variance step, checked once outside the session. Same seed,
+variance simulated on 480 steps, hedge on every 16th date (the same 30 dates): the
+model hedge's premium plus CVaR is 1.934, and 1.936 on 1920 steps. The network
+trained on 30-step paths scores 1.971 there, about 0.04 behind the model hedge. On
+the 30-step grid the variance sits at zero on 45 per cent of hedging dates, and
+the variance swap's mark is not a discrete martingale: its mean at maturity exceeds
+its inception price by 2.4e-4, about 7 per cent of the mark and 6.5 standard
+errors. On 480 steps the drift is within noise; the martingale test runs there.
 
 At 100 bp the model hedge, which keeps the zero-cost weights, has mean -2.79 and
 CVaR 3.50. The network trained at 100 bp has mean -0.42, standard deviation 1.77

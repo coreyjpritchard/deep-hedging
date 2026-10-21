@@ -5,6 +5,9 @@ one or more books scored on the same paths. Arrays are nested lists,
 rounded to `decimals` places (default 6). A widget can draw the paths
 and the positions without importing this package.
 
+The schema is provisional, not frozen. A later run-store layout may
+replace it, so a reader should check the `schema` key.
+
 Required keys:
 
 * `schema`: `deephedge.hedge/v1`

@@ -419,14 +419,25 @@ def _(mo):
     chosen position by 0.57 of the gap.
 
     With a fixed charge of 0.05 per instrument per date on which the
-    position changes, the network trades on 28 per cent of dates and delta
-    on 93 per cent. Means are -1.50 and -1.55. Entropic risk is 1.79 for
-    the network and 1.61 for delta, so on the objective it was trained for
-    the network does not beat delta. At S = 100 the three incoming
-    positions all map to about 0.55: there is no band. A fixed charge does
-    not shrink when the trade shrinks, so the soft band that helps under a
-    proportional cost has nothing to sell. The training surrogate uses
-    width 0.05. The plotted P&L uses the exact indicator.
+    position changes, means are -1.50 for the network and -1.55 for delta.
+    Entropic risk is 1.79 for the network and 1.61 for delta, so on the
+    objective it was trained for the network does not beat delta. At
+    S = 100 the three incoming positions all map to about 0.55.
+
+    Under the exact indicator the network's position changes on 97 per
+    cent of trade slots, open and liquidation included, and delta's on
+    99.9 per cent. The network's changes are mostly small: 15 per cent of
+    its changes between the open and the liquidation exceed 0.01 shares,
+    against 80 per cent of delta's. A network that outputs a position does
+    not return its incoming position to the last bit, so it never holds
+    exactly still. Those small changes cost almost nothing under the
+    training surrogate, `tanh(0.001 / 0.05)` is 0.02, and the full 0.05
+    under the indicator. The loss against delta is that mismatch between
+    training and evaluation. It is not evidence that a fixed charge has no
+    band: the optimal rule under a fixed cost does have a no-trade region.
+    A policy that can output "no trade" is the next specification. The
+    training surrogate uses width 0.05. The plotted P&L uses the exact
+    indicator.
 
     ## The variance swap, on 4 000 Heston paths
 
@@ -494,11 +505,13 @@ def _(mo):
                 "band: the black curves separate."
             ),
             "3. Select the fixed charge of 0.05. Does a band appear?": mo.md(
-                "No. At S = 100 the rule returns about 0.55 whether it arrives "
-                "holding 0.2, 0.5 or 0.8. It trades on 28 per cent of dates, "
-                "delta on 93 per cent, and its entropic risk is 1.79 against "
-                "delta's 1.61. Fewer trades, a looser hedge, and no improvement "
-                "on the training objective."
+                "Not with this network. At S = 100 the rule returns about 0.55 "
+                "whether it arrives holding 0.2, 0.5 or 0.8, and its entropic risk "
+                "is 1.79 against delta's 1.61. It never holds exactly still, so "
+                "the exact charge falls on 97 per cent of its trade slots, although "
+                "only 15 per cent of its changes between open and liquidation "
+                "exceed 0.01 shares. The training surrogate charged those small "
+                "changes almost nothing. That mismatch is what this run shows."
             ),
             "4. Switch to Heston. Then switch the swap from the mark to "
             "the per-contract charge. What happens to the red dots?": mo.md(
