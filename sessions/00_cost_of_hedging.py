@@ -292,7 +292,7 @@ def _(mo):
     Buehler, Gonon, Teichmann and Wood (2019, *Deep hedging*, Quantitative Finance
     19(8)). The learned band is softer than the theoretical one: the black curves are
     flatter than delta but not flat, so inside the band the network still trades a
-    little. Session 02 puts the formula and the learned band on the same axes and asks
+    little. Session 03 puts the formula and the learned band on the same axes and asks
     whether a sharp band would do better.
 
     A band policy has a second advantage that panel (a) shows when you change the number
@@ -360,7 +360,7 @@ def _(mo):
                 "positions around delta grows by about 5 per cent, and the band moves "
                 "upwards instead, so the network holds more stock than delta. Small "
                 "costs, discrete rehedging and the network's soft band are three "
-                "candidate reasons. Session 02 separates them."
+                "candidate reasons. Session 03 separates them."
             ),
         }),
     ])

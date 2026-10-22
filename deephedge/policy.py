@@ -69,6 +69,66 @@ class MLPPolicy(nn.Module):
         }
 
 
+class GammaPolicy(nn.Module):
+    """`MLPPolicy` with dimensionless Black-Scholes gamma as a fourth input.
+
+    The fourth input is `n(d1) = Gamma * S * sigma * sqrt(tau)`. It is a
+    function of time and the spot, which the original three inputs already
+    determine, written in the coordinate that enters the Whalley-Wilmott
+    width. The previous position is still an input. `sigma` and `r` are
+    the Black-Scholes parameters used only to build that feature.
+    """
+
+    def __init__(
+        self,
+        strike: float,
+        maturity: float,
+        sigma: float,
+        r: float = 0.0,
+        width: int = 32,
+        depth: int = 2,
+    ):
+        super().__init__()
+        self.strike = float(strike)
+        self.maturity = float(maturity)
+        self.sigma = float(sigma)
+        self.r = float(r)
+        self.width = width
+        self.depth = depth
+        layers: list[nn.Module] = []
+        d_in = 4
+        for _ in range(depth):
+            layers += [nn.Linear(d_in, width), nn.ReLU()]
+            d_in = width
+        layers.append(nn.Linear(d_in, 1))
+        self.net = nn.Sequential(*layers)
+
+    def features(self, t: float, S: torch.Tensor, prev: torch.Tensor) -> torch.Tensor:
+        tau = max(self.maturity - t, 1e-8)
+        sqrt_tau = math.sqrt(tau)
+        moneyness = torch.log(S / self.strike) / sqrt_tau
+        sd = self.sigma * sqrt_tau
+        d1 = (torch.log(S / self.strike) + (self.r + 0.5 * self.sigma**2) * tau) / sd
+        unit_gamma = torch.exp(-0.5 * d1**2) / math.sqrt(2.0 * math.pi)
+        return torch.stack(
+            [torch.full_like(S, tau / self.maturity), moneyness, prev, unit_gamma],
+            dim=-1,
+        )
+
+    def forward(self, t: float, S: torch.Tensor, prev: torch.Tensor) -> torch.Tensor:
+        return self.net(self.features(t, S, prev)).squeeze(-1)
+
+    def config(self) -> dict:
+        return {
+            "strike": self.strike,
+            "maturity": self.maturity,
+            "sigma": self.sigma,
+            "r": self.r,
+            "width": self.width,
+            "depth": self.depth,
+        }
+
+
 class DeltaPolicy(nn.Module):
     """Black-Scholes delta N(d1). Ignores the previous position."""
 

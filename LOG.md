@@ -2,10 +2,177 @@
 
 Dated entries, newest first. What was learned, what surprised, open questions.
 
-**Current state.** Sessions 00, 01 and 02 are built. Black-Scholes and Heston sit on
-the environment, and the cost model is pluggable. **Next:** the Whalley-Wilmott band
-(roadmap item 02). Work through 00 and 01 first. File `sessions/02_cost_models.py` is
-the cost-model picture, not that research question.
+**Current state.** Sessions 00, 01, 02 and 03 are built. Black-Scholes and Heston
+sit on the environment, costs are pluggable, and the Whalley-Wilmott band is
+compared with the learned hedge on Black-Scholes in `sessions/03_whalley_wilmott.py`.
+That file is roadmap item 02. The box stays open until Corey works through it.
+File `sessions/02_cost_models.py` is the cost-model picture, not that question.
+**Next:** the same four hedgers under Heston, then under rough Bergomi with `roughvol`.
+
+## 2026-10-11 The Whalley-Wilmott band is right where the cost is small
+
+The picture is `sessions/03_whalley_wilmott.py`. On Black-Scholes, with a
+proportional cost only, the learned cloud tracks the asymptotic width across
+the spot (correlation 0.998 at 30 steps and 50 bp), but so does the cloud of a
+constant-width band, so that is not evidence of a gamma-shaped band. Cloud to
+cloud, the network's is 0.50 to 0.64 of the Whalley-Wilmott hedger's. At 120
+steps and 5 to 25 bp its cost exponent is 0.293, above the 0.227 of the
+Whalley-Wilmott hedger's own cloud on the same grid. At 30 steps and 25 to
+200 bp both are close to flat (0.063 and 0.041). The decision rule stays soft.
+A gamma feature does not sharpen it.
+
+The half-width is Whalley and Wilmott (1997), equation (17) and section 4.
+A trade of N shares loses epsilon N S, which is `ProportionalCost(epsilon)`.
+Their utility is `1 - exp(-gamma x)`. Maximising it is the same problem as
+minimising the entropic risk of terminal wealth at aversion gamma. Our
+entropic risk is applied to the time-0 P&L. At r = 0 that P&L is the change
+in wealth, so their gamma equals our lambda. At r > 0 the two match when
+lambda equals gamma times exp(r T). This session has r = 0 and lambda = 1.
+When mu = r the centre is the Black-Scholes delta and the half-width, in
+shares, is
+
+`(3/2 * epsilon * S * exp(-r (T - t)) * Gamma^2 / gamma) ** (1/3)`.
+
+`epsilon * S * Gamma^2 / gamma` is dimensionless, and so is the cube root.
+Zakamouline (2006) writes the same expression. At r = 0 it is the PFHedge
+formula. A drift mu different from r would add a Merton term to the centre.
+This market has mu = r = 0, so that term is zero and is not applied. Inside
+the band the hedger does not trade. Outside it, the hedger trades to the
+nearer edge. The engine still charges liquidation for every hedger, which
+the continuous-time band was not built to do. The comparison across hedgers
+is on that same charge.
+
+Hypotheses, stated before the runs. The analytic width scales as the cube
+root of the cost. The learned cloud at S = 100 and t = T/2 should scale close
+to that at 120 steps and 5 to 25 bp, and closer to flat than to a cube root
+at 30 steps and 25 to 200 bp. The learned centre should sit at or above
+delta, with the offset growing in the cost, while the asymptotic centre is
+delta. Every band should beat delta on entropic risk. At small cost the
+asymptotic band should match or beat a constant width tuned on another seed,
+and the network should be close. At large cost the network may win, because
+a centre shift is outside the approximation. Mean P&L of a band should be
+less negative than delta's. The previous position is already an input, and
+time and log moneyness already determine gamma, so adding gamma as a fourth
+input should matter only if the network had missed that coordinate.
+
+The cloud is half the 10-to-90 range of holding minus delta, for spots in
+[99, 101] at t = T/2. Paths are the session 00 batch: 20 000 draws, seed
+12345. The 30-step networks are the session 00 weights. The 120-step networks
+use the same budget (width 32, depth 2, 100 epochs, training seed 0). The
+fixed half-width is chosen on seed 0, on a grid from 0.02 to 0.40, and then
+scored on 12345. It has one tuned parameter. The asymptotic band has none.
+The 50 bp row reproduces session 00: network entropic risk 1.052, delta 1.543.
+
+The fitted cloud exponent at 120 steps is 0.293. A 400-draw bootstrap of the
+paths gives standard error 0.007, so the gap from 1/3 is 5.4 sampling
+standard errors. The ordinary regression standard error on the four designed
+costs is 0.028, which is lack of fit rather than sampling error, and on that
+scale the gap is 1.4 standard errors. The widths are 0.050, 0.065, 0.071 and
+0.081, against a cube root anchored at the 5 bp point of 0.050, 0.063, 0.072
+and 0.085. The analytic exponent on the same costs is 0.333 with residual
+zero. At 30 steps the cloud exponent is 0.063, bootstrap standard error
+0.006, lack-of-fit standard error 0.035. The widths are 0.069, 0.079, 0.080
+and 0.079. That is no scaling. A no-trade half-width defined by an absolute
+trade below 0.005 shares is a different object: it stays under 0.05 and its
+log-log slope is steep, because a steeper soft rule remains inside that
+tolerance farther from the centre. It is not the cube-root test.
+
+The analytic 1/3 is the wrong yardstick for a cloud on a discrete grid. The
+same cloud measured on the Whalley-Wilmott hedger, which trades to the edge of
+the analytic band on the same paths, has exponent 0.227 at 120 steps
+(lack-of-fit standard error 0.033) and 0.041 at 30 steps (0.007). So the
+network's 120-step cloud scales more like a cube root than the asymptotic
+rule's own cloud does, and the flat 30-step cloud is what the asymptotic rule
+shows on that grid too. The gaps from 1/3 above measure the grid as well as
+the network. These reference values come from a one-off check outside the
+session.
+
+Across spot, in bins from 85 to 115, the 30-step cloud at 50 bp correlates
+0.998 with the asymptotic width, at 0.54 of its level (median ratio). That
+correlation does not show a learned gamma shape: on the same paths the cloud
+of the constant-width band, whose half-width does not depend on the spot,
+correlates 0.974 to 0.998 with the asymptotic width across the eight rows,
+because delta moves by about gamma times the spot move between dates. The
+level is not a band's level either. The Whalley-Wilmott hedger's own cloud is
+0.59 to 0.92 of its analytic half-width, and the network's cloud is 0.50 to
+0.64 of the Whalley-Wilmott hedger's cloud. Against the analytic width the
+network's median ratio is 0.37 to 0.63 across the eight rows, not a constant
+half.
+
+The slope of the chosen position with respect to the incoming position, at
+the centre, runs from 0.60 to 0.85 on the 30-step grid and from 0.66 to 0.89
+on the 120-step grid. A sharp band has slope 1 inside and 0 outside. The
+centre offset at 5 bp is +0.002 shares. At 200 bp it is +0.105. The
+asymptotic centre does not move.
+
+Giving the network `n(d1)` as a fourth input, and retraining at the same
+budget, does not change the answer. Entropic risks agree with the base
+network to about one standard error on every row. Slopes stay in the same
+range. The 120-step cloud exponent moves from 0.293 to 0.306 (bootstrap
+standard error 0.008). The spot correlation was already above 0.94. The
+previous position was already a feature, and gamma was already a function of
+the other two inputs. The miss is the soft rule, not a missing coordinate.
+Session 00 had already found that a wider net, more epochs, SiLU and CVaR
+did not sharpen it.
+
+On the common batch, entropic risk (lower is better) and mean P&L. Standard
+errors are in parentheses. Gamma is the network with the extra input.
+
+120 steps, 5 bp. Fixed half-width 0.04. Asymptotic half-width at the money
+0.090. Cloud 0.050.
+
+| hedger | mean P&L | entropic |
+|---|---:|---:|
+| delta | -0.224 (0.001) | 0.244 (0.002) |
+| Whalley-Wilmott | -0.101 (0.003) | 0.166 (0.003) |
+| fixed width 0.04 | -0.129 (0.002) | 0.165 (0.002) |
+| network | -0.133 (0.002) | 0.175 (0.002) |
+| network with gamma | -0.134 (0.002) | 0.176 (0.002) |
+
+120 steps, 25 bp. Fixed half-width 0.10. Asymptotic half-width 0.154.
+Cloud 0.081.
+
+| hedger | mean P&L | entropic |
+|---|---:|---:|
+| delta | -1.120 (0.003) | 1.205 (0.003) |
+| Whalley-Wilmott | -0.420 (0.004) | 0.582 (0.004) |
+| fixed width 0.10 | -0.452 (0.004) | 0.589 (0.004) |
+| network | -0.473 (0.004) | 0.597 (0.004) |
+| network with gamma | -0.478 (0.004) | 0.601 (0.004) |
+
+30 steps, 50 bp. Fixed half-width 0.10. Asymptotic half-width 0.194.
+Cloud 0.079.
+
+| hedger | mean P&L | entropic |
+|---|---:|---:|
+| delta | -1.366 (0.004) | 1.543 (0.006) |
+| Whalley-Wilmott | -0.740 (0.006) | 1.141 (0.008) |
+| fixed width 0.10 | -0.802 (0.005) | 1.055 (0.006) |
+| network | -0.828 (0.005) | 1.052 (0.007) |
+| network with gamma | -0.825 (0.005) | 1.054 (0.007) |
+
+30 steps, 200 bp. Fixed half-width 0.16. Asymptotic half-width 0.307.
+Cloud 0.079.
+
+| hedger | mean P&L | entropic |
+|---|---:|---:|
+| delta | -5.472 (0.012) | 6.828 (0.032) |
+| Whalley-Wilmott | -2.632 (0.015) | 4.365 (0.018) |
+| fixed width 0.16 | -2.739 (0.010) | 3.721 (0.016) |
+| network | -2.700 (0.007) | 3.350 (0.016) |
+| network with gamma | -2.701 (0.008) | 3.364 (0.017) |
+
+Every band beats delta, on entropic risk and on mean P&L. At 5 to 25 bp the
+asymptotic band ties the tuned constant width and beats the network by about
+0.01 to 0.02, a few standard errors. At 100 and 200 bp the network beats both
+the constant band and the asymptotic band. The asymptotic band is too wide
+there (0.31 against a tuned constant 0.16 at 200 bp) and it stays on delta
+while the learned centre has moved up by 0.10.
+
+The next measurement is the same four books under Heston, with a proportional
+cost on the spot and a stated charge on the variance swap. After that, the
+same comparison under rough Bergomi, using the `roughvol` simulator from the
+rough-volatility repository.
 
 ## 2026-10-11 Transaction costs are a model, not a rate
 

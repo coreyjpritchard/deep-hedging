@@ -6,7 +6,18 @@ import importlib
 
 import pytest
 
-MODULES = ("env", "markets", "hedging", "risk", "policy", "train", "heston", "costs", "export")
+MODULES = (
+    "env",
+    "markets",
+    "hedging",
+    "risk",
+    "policy",
+    "train",
+    "heston",
+    "costs",
+    "export",
+    "band",
+)
 
 
 def pytest_addoption(parser):
