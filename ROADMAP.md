@@ -44,3 +44,11 @@ runs on the shared interface, which is separate from working through the session
   simulator comes from the sibling repository
   [rough-volatility](https://github.com/coreyjpritchard/rough-volatility), package
   `roughvol`. This is the market for session 04.
+
+## Learning the method
+
+The picture-first ladder is [`LEARN.md`](LEARN.md). Eight lessons, from
+the P/L of one hedge up to a network drawn on the live view. None of
+them is built. None of them closes a box above. The live view those
+lessons aim at is `playground/live.py`, and it steps a fixed band and
+delta hedging today.

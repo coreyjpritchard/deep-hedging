@@ -23,6 +23,23 @@ decision rule for three starting positions.
 The playground trains a hedge in one market and scores it in another.
 `marimo run playground/app.py`, static copy in
 [`docs/playground/index.html`](docs/playground/index.html).
+
+The live view steps one path: the spot, a fixed band around delta, the
+cash account, and delta hedging on the same path.
+`marimo run playground/live.py`. The lessons that build a network up to
+that view are in [`LEARN.md`](LEARN.md). None of those lessons is built.
+
+![Date 4 of the default path: the holding sits inside the band](docs/live/date4.png)
+
+The chart is a plotly figure in the cell output, so it arrives with the
+caption. The Heston choice uses xi = 0.5, which keeps daily variance off the
+truncation floor. `Heston()` stays at xi = 2.
+
+![Phone width, Heston, date 8: the controls sit in a column and the chart is in the page](docs/live/phone.png)
+
+On that default path (Black-Scholes, seed 7, 30 steps, 50 bp, half-width
+0.10) the band trades on 16 of the 30 hedging dates. A short animation is
+[`docs/live/live.gif`](docs/live/live.gif). The log has the histogram.
 The default picture is a small network trained on Black-Scholes and scored
 on Heston. On the static page the training entropic risk fell from 2.971 to
 1.324. On those training paths the network's entropic risk is 1.324
@@ -132,6 +149,7 @@ marimo run sessions/01_heston_deep_hedge.py   # session 01, the 2019 Heston figu
 marimo run sessions/02_cost_models.py         # session 02, cost models and the swap unit
 marimo run sessions/03_whalley_wilmott.py     # session 03, the Whalley-Wilmott band
 marimo run playground/app.py                  # train in one market, test in another
+marimo run playground/live.py                 # step one hedged path
 pytest -m "not slow"                          # tests, a few seconds
 python -m deephedge.train                     # retrain the cached weights, about 3 minutes
 python -m deephedge.figures                   # redraw the README figure
