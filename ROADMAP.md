@@ -22,3 +22,21 @@ The session ladder. Levels are defined in `CLAUDE.md`: 0 play, 1 reproduce,
 - [ ] **05 A level 3 question** (level 3). Proposed: does the width of the learned
   no-trade band scale with the Hurst exponent H under rough Bergomi, and does a
   feature-based network lose more to a recurrent one as H falls?
+
+## Environment
+
+The market steps under the sessions above. A box is ticked when that market
+runs on the shared interface, which is separate from working through the session.
+
+- [ ] **Shared market environment, Black-Scholes.** One interface for instruments,
+  features, payoff, price and a benchmark hedge. Proportional costs plug in beside
+  the market. Session 00 runs on it.
+- [ ] **Heston on the same interface.** Features `(spot, variance)`. A variance swap
+  can be switched on as a second hedging instrument. This is the market for session 01.
+- [ ] **Pluggable transaction costs.** Cost models are part of the environment and
+  independent of the volatility model. The proportional cost is the first; the
+  others are not written yet.
+- [ ] **Rough Bergomi on the same interface.** Features carry volatility memory. The
+  simulator comes from the sibling repository
+  [rough-volatility](https://github.com/coreyjpritchard/rough-volatility), package
+  `roughvol`. This is the market for session 04.
