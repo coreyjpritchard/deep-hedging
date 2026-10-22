@@ -9,6 +9,18 @@ That file is roadmap item 02. The box stays open until the session has been work
 File `sessions/02_cost_models.py` is the cost-model picture, not that question.
 **Next:** the same four hedgers under Heston, then under rough Bergomi with `roughvol`.
 
+## 2026-10-22 Static figures, one results file, a lock file
+
+`python -m deephedge.figures` now scores every hedger from the cached weights on
+seed 12345 and writes four PNGs (`docs/00_no_trade_band.png`, `01_heston_pnl.png`,
+`02_cost_models.png`, `03_risk_vs_cost.png`) and `docs/results.csv`. Rerun on
+22 October 2026, every README number matched the sessions: 50 bp delta -1.37 and
+entropic 1.54, network -0.83 and 1.05; Heston premium plus CVaR 1.99 (model hedge)
+and 2.00 (network); fixed charge 1.61 (delta) and 1.79 (network); at 200 bp, 6.83,
+4.37, 3.72 and 3.35. The session 00 premium is 2.2872, so it rounds to 2.29, not the
+2.28 the README had. Dependencies are locked in `uv.lock` (torch from the CPU index
+off macOS), and `make reproduce` runs the sync, the tests and the figures.
+
 ## 2026-10-11 The Whalley-Wilmott band is right where the cost is small
 
 The picture is `sessions/03_whalley_wilmott.py`. On Black-Scholes, with a
