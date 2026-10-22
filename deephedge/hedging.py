@@ -95,45 +95,60 @@ def pnl_from_positions(
     return terminal_pnl(wrapped, positions, pay, cost, premium)
 
 
+def _is_cost_model(cost) -> bool:
+    return hasattr(cost, "amount_torch")
+
+
 def pnl_from_positions_torch(
     paths: torch.Tensor,
     positions: torch.Tensor,
     payoff,
     cost: float | tuple[float, ...] = 0.0,
     premium: float = 0.0,
+    *,
+    exact: bool = True,
 ) -> torch.Tensor:
     """Torch version of the terminal P&L, differentiable in `positions`.
 
-    One instrument: `paths` has shape `(m, n + 1)` and `positions` shape
-    `(m, n)`, and `cost` is one proportional rate. That branch is the
-    Black-Scholes training loss.
+    One instrument and a plain rate: `paths` has shape `(m, n + 1)` and
+    `positions` shape `(m, n)`. That branch is the Black-Scholes training
+    loss. `exact` is not read there.
 
-    Several instruments: `paths` has shape `(m, n + 1, d)` and `positions`
-    shape `(m, n, d)`. `cost` is one rate or a rate per instrument. A
-    callable payoff receives the first instrument at maturity,
-    `paths[:, -1, 0]`, which is the spot. Pass prices that are already
-    discounted, and a payoff already multiplied by the maturity discount,
-    the same contract as `pnl_from_positions`. Gains and costs sum over
-    the instrument axis, and the payoff is charged once.
+    A cost model (`amount_torch`) is applied to prices of shape
+    `(m, n + 1, d)`. `exact=True` matches numpy `amount`, including the
+    fixed-cost indicator. `exact=False` asks the model for its smooth
+    training surrogate. A proportional rate, a tuple of rates, has no
+    surrogate: the charge is `rate * |change| * price`.
+
+    A callable payoff receives the spot at maturity. Pass prices that are
+    already discounted, and a payoff already multiplied by the maturity
+    discount. Gains and costs sum over instruments, and the payoff is
+    charged once.
     """
-    if paths.ndim == 2:
+    if paths.ndim == 2 and not _is_cost_model(cost):
         pay = payoff(paths[:, -1]) if callable(payoff) else payoff
         gains = (positions * (paths[:, 1:] - paths[:, :-1])).sum(dim=1)
         zero = torch.zeros_like(paths[:, :1])
         full = torch.cat([zero, positions, zero], dim=1)
         costs = cost * ((full[:, 1:] - full[:, :-1]).abs() * paths).sum(dim=1)
         return premium - pay + gains - costs
-    if paths.ndim != 3:
+    if paths.ndim == 2:
+        paths = paths.unsqueeze(-1)
+        positions = positions.unsqueeze(-1)
+    elif paths.ndim != 3:
         raise ValueError(f"paths must have shape (m, n + 1) or (m, n + 1, d), got {paths.shape}")
     spot_T = paths[:, -1, 0]
     pay = payoff(spot_T) if callable(payoff) else payoff
     gains = (positions * (paths[:, 1:] - paths[:, :-1])).sum(dim=(1, 2))
-    m, _, d = paths.shape
-    zero = torch.zeros(m, 1, d, dtype=paths.dtype, device=paths.device)
-    full = torch.cat([zero, positions, zero], dim=1)
-    traded = (full[:, 1:] - full[:, :-1]).abs()
-    rate = torch.as_tensor(cost, dtype=paths.dtype, device=paths.device)
-    costs = (rate * traded * paths).sum(dim=(1, 2))
+    if _is_cost_model(cost):
+        costs = cost.amount_torch(paths, positions, exact=exact)
+    else:
+        m, _, d = paths.shape
+        zero = torch.zeros(m, 1, d, dtype=paths.dtype, device=paths.device)
+        full = torch.cat([zero, positions, zero], dim=1)
+        traded = (full[:, 1:] - full[:, :-1]).abs()
+        rate = torch.as_tensor(cost, dtype=paths.dtype, device=paths.device)
+        costs = (rate * traded * paths).sum(dim=(1, 2))
     return premium - pay + gains - costs
 
 

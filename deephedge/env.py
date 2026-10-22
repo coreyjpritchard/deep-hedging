@@ -23,17 +23,17 @@ The swap's price belongs in `instruments`; the variance factor stays in
 `features`, because a feature is not something the P&L can trade. The
 benchmark hedge has one weight per instrument.
 
-Not implemented yet, and where they will plug in:
+Costs sit on the environment, not inside the simulator, so one batch of
+paths can be scored under several charges. `ProportionalCost` multiplies
+the discounted price, or a cash `unit` when the mark is the wrong notional
+(the variance swap). `FixedPlusProportional` adds a cash charge each time
+an instrument trades, including liquidation at maturity.
+`QuadraticCost` is a smooth market-impact charge. See `deephedge.costs`.
+
+Not implemented yet, and where it will plug in:
 
 * Rough Bergomi: the volatility has memory, so the feature path has to carry
   it. The simulator will come from the sibling package `roughvol`.
-* Further cost models: implement `CostModel.amount`. `ProportionalCost`
-  is the only one so far, the cost in Buehler, Gonon, Teichmann and Wood
-  (2019), section 3. Costs sit on the environment, not inside the simulator,
-  so one batch of paths can be scored at several costs. A proportional
-  rate times the variance swap's mark is a poor model of the cost of
-  trading that swap, because the mark is an integrated variance of order
-  10^-3. That is left for a later cost model.
 """
 
 from __future__ import annotations
@@ -45,15 +45,23 @@ from typing import Protocol
 import numpy as np
 from scipy.stats import norm
 
+from deephedge.costs import (
+    FixedPlusProportional,
+    ProportionalCost,
+    QuadraticCost,
+    as_cost,
+)
 from deephedge.markets import bs_paths, time_grid
 
 __all__ = [
     "BlackScholes",
     "CostModel",
     "Environment",
+    "FixedPlusProportional",
     "Market",
     "Paths",
     "ProportionalCost",
+    "QuadraticCost",
     "bs_call_delta",
     "bs_call_price",
     "call_on_spot",
@@ -238,7 +246,16 @@ class CostModel(Protocol):
     is already in time-0 money: the proportional cost `c |dq| S_t` becomes
     `c |dq| e^{-rt} S_t`. `positions` has shape `(m, n, d)`, the
     holding on each interval. The book is flat before `t_0` and flat again
-    at maturity, and both of those trades are charged.
+    at maturity. Liquidation is charged: the closing trade is part of
+    `amount`, not an optional extra.
+
+    The concrete models are `ProportionalCost`, `FixedPlusProportional`
+    and `QuadraticCost` in `deephedge.costs`. A model may charge a cash
+    notional per instrument (`unit`) instead of the price. The variance
+    swap uses that, because its mark is not a meaningful notional. The
+    swap's price, the gains and the hedge ratio stay as the market
+    quoted them. A torch training step calls `amount_torch` on those
+    models. Evaluation calls `amount`, which is exact.
 
     Returns the total cost per path, shape `(m,)`.
     """
@@ -262,49 +279,6 @@ def _as_positions(positions: np.ndarray, n_instruments: int) -> np.ndarray:
             f"positions have shape {pos.shape}; expected (m, n, {n_instruments})"
         )
     return pos
-
-
-@dataclass(frozen=True)
-class ProportionalCost:
-    """Proportional cost `rate * sum |change in position| * price`.
-
-    `rate` is a scalar, or one rate per instrument as a tuple of length
-    `d`. The opening trade, every rebalance, and the liquidating trade are
-    included. This is the cost in Buehler et al. (2019), section 3.
-
-    A later model (a fixed cost, a spread, a cost that depends on the
-    sign of the trade) implements `amount` and replaces this object on
-    the environment. The market stays put.
-    """
-
-    rate: float | tuple[float, ...] = 0.0
-
-    def amount(self, prices: np.ndarray, positions: np.ndarray) -> np.ndarray:
-        prices = np.asarray(prices, dtype=float)
-        pos = _as_positions(positions, prices.shape[-1])
-        if pos.shape[0] != prices.shape[0] or pos.shape[1] != prices.shape[1] - 1:
-            raise ValueError(
-                f"positions shape {pos.shape} does not match prices shape {prices.shape}"
-            )
-        rate = np.asarray(self.rate, dtype=float)
-        m, _n_plus, d = prices.shape
-        flat = np.zeros((m, 1, d))
-        full = np.concatenate([flat, pos, flat], axis=1)
-        traded = np.abs(np.diff(full, axis=1))
-        return (rate * traded * prices).sum(axis=(1, 2))
-
-
-def as_cost(cost: CostModel | float | tuple[float, ...]) -> CostModel:
-    """A `CostModel`, or a proportional rate standing in for one."""
-    if isinstance(cost, ProportionalCost):
-        return cost
-    if isinstance(cost, tuple):
-        return ProportionalCost(cost)
-    if isinstance(cost, (int, float, np.floating)):
-        return ProportionalCost(float(cost))
-    if hasattr(cost, "amount"):
-        return cost
-    raise TypeError(f"cost must be a rate or a CostModel, got {type(cost).__name__}")
 
 
 def terminal_pnl(

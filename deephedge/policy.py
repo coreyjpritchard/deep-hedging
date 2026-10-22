@@ -271,3 +271,46 @@ def held_positions(
     """
     positions = rollout_numpy(policy, paths, T)
     return paths[:, k], positions[:, k]
+
+
+def held_instrument(
+    policy: nn.Module,
+    features: np.ndarray,
+    time: np.ndarray,
+    n_instruments: int,
+    k: int,
+    instrument: int = 0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Feature column 0 at date k, and the position in one instrument after trading there.
+
+    `features` has shape `(m, n + 1, f)`. The returned position is column
+    `instrument` of `rollout_positions`. Feature column 0 is the spot.
+    """
+    with torch.no_grad():
+        positions = rollout_positions(policy, features, time, n_instruments).double().numpy()
+    return np.asarray(features)[:, k, 0], positions[:, k, instrument]
+
+
+def heston_spot_response(
+    policy: nn.Module,
+    t: float,
+    spots: np.ndarray,
+    variance: float,
+    prev_spot: float,
+    prev_swap: float,
+) -> np.ndarray:
+    """Spot weight and variance-swap weight along a grid of spots.
+
+    Variance and both incoming positions are held fixed, which is the
+    Heston analogue of `position_grid`. Returns shape `(len(spots), 2)`.
+    """
+    spots = np.asarray(spots, dtype=np.float32).reshape(-1)
+    features = torch.zeros(spots.size, 2)
+    features[:, 0] = torch.as_tensor(spots)
+    features[:, 1] = float(variance)
+    prev = torch.zeros(spots.size, 2)
+    prev[:, 0] = float(prev_spot)
+    prev[:, 1] = float(prev_swap)
+    with torch.no_grad():
+        out = policy(float(t), features, prev)
+    return out.double().numpy()

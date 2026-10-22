@@ -7,4 +7,6 @@ and pytest would otherwise treat that word as a path. Untracked by default.
 Use the module and function names of `deephedge` (for example `exercises/hedging.py`
 with `delta_hedge_pnl`, `exercises/env.py` with `BlackScholes`, or
 `exercises/heston.py` with `Heston`). Tests that need a function you have not
-written yet are skipped.
+written yet are skipped. Cost models are `ProportionalCost`,
+`FixedPlusProportional` and `QuadraticCost` in `deephedge/costs.py`. A test that
+needs one you have not written is skipped.
