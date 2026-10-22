@@ -114,3 +114,5 @@ The plan is in [ROADMAP.md](ROADMAP.md) and dated notes are in [LOG.md](LOG.md).
 - Horvath, Teichmann, Zuric (2021). Deep hedging under rough volatility. Risks 9(7).
 
 MIT licence.
+
+Built with the help of AI coding tools; all results are reproducible from the scripts in this repo.
