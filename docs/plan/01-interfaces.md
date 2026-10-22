@@ -1,6 +1,6 @@
 # Interfaces: the shared typed contract
 
-Plan only. Names and signatures are the target for M01, M02 and M05; builders may rename
+Plan only. Names and signatures are the target for M01, M02 and M05; modules may rename
 with a note in the PR but must keep the shapes and the seed rules.
 
 Conventions kept from `CLAUDE.md` and PR 1:

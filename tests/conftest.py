@@ -1,4 +1,4 @@
-"""Shared fixtures. `--impl exercises` runs the mathematical tests against Corey's code."""
+"""Shared fixtures. `--impl exercises` runs the mathematical tests against `exercises/`."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ class Impl:
     """Looks a function up in the package's env, markets, hedging, risk, policy, train, heston.
 
     A function missing from an exercises package skips the test instead of failing it,
-    so Corey can implement one function at a time.
+    so the exercises can be written one function at a time.
     """
 
     def __init__(self, package: str):
