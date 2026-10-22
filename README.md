@@ -41,7 +41,8 @@ call is 30-day at the money, S0 = K = 100, sigma = 20%, r = 0, rehedged daily.
 -1.37 for delta, and its entropic risk at lambda = 1 is 1.05 against 1.54. At 100 bp,
 going from 10 to 120 rehedges takes delta's mean P&L from -1.96 to -4.48, close to the
 square-root-of-n law; the network trained at 30 steps goes from -1.26 to -1.89, and its
-standard deviation falls from 1.15 to 0.63, because inside its band it does not trade.
+standard deviation falls from 1.15 to 0.63: inside its band it moves only partway towards
+delta, so extra rehedging dates add far less cost than they do for delta.
 
 **Session 01, Heston, no cost.** In the Heston market of Buehler et al. (2019), section
 5.2, with a variance swap as the second instrument, the network matches the model hedge but does not beat it: premium plus CVaR at 50% is 2.00
