@@ -1,165 +1,116 @@
 # deep-hedging
 
-Learn a hedging policy with a neural network when trading costs money, and compare it
-with Black-Scholes delta hedging. The capstone is deep hedging under rough volatility.
+**With 50 bp trading costs, a trained hedger cuts entropic risk from 1.54 to 1.05 against
+Black-Scholes delta, and loses 0.83 on average instead of 1.37 on a 2.29 premium (20,000
+simulated paths). At 200 bp it beats the Whalley-Wilmott asymptotic band, 3.35 against
+4.37 (delta 6.83).**
 
-![Positions held halfway to expiry: on delta without costs, a band around it with costs](docs/00_no_trade_band.png)
+A neural network is trained end to end on simulated paths to minimise a convex risk
+measure of the hedged P&L of a short call, as in Buehler, Gonon, Teichmann and Wood (2019),
+and compared with delta hedging and with no-trade bands. The aim is deep hedging under
+rough volatility; the markets so far are Black-Scholes and Heston.
 
-A short 30-day at-the-money call, hedged on 30 dates. Each red dot is one simulated path:
-the spot halfway to expiry and the position the network holds there. Without costs the
-network learns delta (left). With a 50 bp proportional cost it holds a band around delta
-and trades only when its position drifts too far (right). The black curves are its
-decision rule for three starting positions.
+![Positions held at day 15: on delta without costs, a band around it with costs](docs/00_no_trade_band.png)
 
-## What is here so far
+![Entropic risk against proportional cost for delta, the two bands and the network](docs/03_risk_vs_cost.png)
 
-| Session | Question | Open it |
-|---|---|---|
-| 00 | Why does delta hedging lose money when trading costs money, and what does a network do instead? | `sessions/00_cost_of_hedging.py`, static copy in [`docs/00_cost_of_hedging.html`](docs/00_cost_of_hedging.html) |
-| 01 | In the 2019 Heston market, does a network match the model hedge once a variance swap is traded? | `sessions/01_heston_deep_hedge.py`, static copy in [`docs/01_heston_deep_hedge.html`](docs/01_heston_deep_hedge.html) |
-| 02 | How does the learned hedge change when the cost model changes? | `sessions/02_cost_models.py`, static copy in [`docs/02_cost_models.html`](docs/02_cost_models.html) |
-| 03 | Does the learned band match the Whalley-Wilmott band? | `sessions/03_whalley_wilmott.py`, static copy in [`docs/03_whalley_wilmott.html`](docs/03_whalley_wilmott.html) |
+## Results
 
-Findings from session 00, on 20 000 fresh paths with a 50 bp cost:
+Every number below is from `python -m deephedge.figures` (seed 12345, cached weights
+trained on seed 0) and is written to [`docs/results.csv`](docs/results.csv). The short
+call is 30-day at the money, S0 = K = 100, sigma = 20%, r = 0, rehedged daily.
 
-- Delta hedging has mean P&L -1.37 against a premium of 2.28; the network, -0.83. The
-  network's entropic risk at lambda = 1 is 1.05 against 1.54 for delta.
-- With cost 100 bp, going from 10 to 120 rehedges takes delta hedging's mean P&L from
-  -1.96 to -4.48, close to the square-root-of-n law. The network loses far less.
-- The learned band is softer than the Whalley-Wilmott band, barely widens between 50
-  and 200 bp, and sits above delta. Session 03 measures that comparison.
-  File `sessions/02_cost_models.py` is the cost-model picture, not that question.
+**Session 00, proportional costs.** At 50 bp the network's mean P&L is -0.83 against
+-1.37 for delta, and its entropic risk at lambda = 1 is 1.05 against 1.54. At 100 bp,
+going from 10 to 120 rehedges takes delta's mean P&L from -1.96 to -4.48, close to the
+square-root-of-n law; the network trained at 30 steps goes from -1.26 to -1.89, and its
+standard deviation falls from 1.15 to 0.63, because inside its band it does not trade.
 
-Findings from session 01, on 20 000 fresh Heston paths at zero cost (seed 12345). The
-call is sold at the quadrature price 1.692. The paper prints 1.69 and, for the same
-figure, an indifference price of 1.94 at 50% CVaR.
+**Session 01, Heston, no cost** ([figure](docs/01_heston_pnl.png)). In the Heston market
+of Buehler et al. (2019), section 5.2, with a variance swap as the second instrument, the
+network matches the model hedge but does not beat it: premium plus CVaR at 50% is 2.00
+against 1.99 (the paper prints 1.94). The model hedge has P&L standard deviation 0.40,
+the network 0.44, and delta in the spot alone 1.56.
 
-- The model hedge (delta, plus a variance swap hedging vega) has mean P&L -0.03,
-  standard deviation 0.40, CVaR 0.30. The network has -0.01, 0.44, 0.31. The two
-  histograms overlap. Premium plus CVaR is 1.99 and 2.00, against the paper's 1.94.
-  The network does not beat the model hedge. The 0.05 gap is the coarse variance
-  step: simulated on 480 steps and hedged on the same 30 dates, the model hedge gives
-  1.934.
-- Delta with no variance swap has standard deviation 1.56 and CVaR 1.28. The tight
-  hedge is the swap.
-- At 100 bp the model hedge's mean falls to -2.79. A network trained at that cost
-  has mean -0.42 and CVaR 1.54.
+**Session 02, other cost models** ([figure](docs/02_cost_models.png)). Under a quadratic
+impact of 0.02 the network's entropic risk is 0.94 against 2.46 for delta. Under a fixed
+charge of 0.05 per trade it is worse than delta, 1.79 against 1.61 (see Limits).
 
-Findings from session 02, seed 12345. Black-Scholes uses 20 000 paths and entropic
-risk at lambda 1. Heston uses 4 000 paths, 50 per cent CVaR, and a smaller network
-than session 01.
+**Session 03, against the Whalley-Wilmott band** ([figure](docs/03_risk_vs_cost.png)).
+Entropic risk on the same 20,000 paths:
 
-- At 50 bp the network's entropic risk is 1.05 against 1.54 for delta. Under a
-  quadratic impact of 0.02 it is 0.94 against 2.46. Both show a no-trade band.
-- Under a fixed charge of 0.05 per trade this network does not beat delta: entropic
-  risk 1.79 against 1.61. It never holds exactly still, so the exact charge falls
-  on 97 per cent of its trade slots, while the tanh surrogate it was trained on
-  charged those small changes almost nothing. That mismatch, not the fixed cost
-  itself, is what the run shows.
-- On Heston, 50 bp on the swap's mark leaves the network holding mean absolute
-  swap weight 232. Charging 0.002 per contract, it holds 0.005. The model hedge,
-  which keeps the swap, has mean P&L -7.34 under that charge.
+| Rehedges, cost | Delta | Whalley-Wilmott band | Constant band (tuned) | Network |
+|---|---|---|---|---|
+| 120, 5 bp | 0.244 | 0.166 | 0.165 | 0.175 |
+| 30, 50 bp | 1.543 | 1.141 | 1.055 | 1.052 |
+| 30, 200 bp | 6.828 | 4.365 | 3.721 | 3.350 |
 
-Findings from session 03, seed 12345, 20 000 Black-Scholes paths, proportional
-cost only, entropic risk at lambda 1. Roadmap item 02. The 30-step network is
-the session 00 one.
+Standard errors are 0.002 to 0.03 (in the CSV). The network's holdings track the
+Whalley-Wilmott width across spot (correlation 0.998 at 30 steps and 50 bp), but a
+constant-width band scores almost as high, so this does not show a gamma-shaped band.
+At the money its cloud of holdings is 0.54 of the analytic half-width. Its width scales
+like cost^0.293 at 120 steps (5 to 25 bp; bootstrap SE 0.007) against the analytic 1/3,
+and like cost^0.063 at 30 steps (25 to 200 bp): discrete rehedging flattens it.
 
-- The cloud of holdings tracks the Whalley-Wilmott width across spot
-  (correlation 0.998 at 30 steps and 50 bp), but the cloud of a constant-width
-  band scores 0.974 to 0.998 too, so this does not show a gamma-shaped band. At
-  that row the cloud is 0.54 of the analytic width. Against the Whalley-Wilmott
-  hedger's own cloud it is 0.50 to 0.64 across the grid.
-- Its cost exponent is 0.293 at 120 steps and 5 to 25 bp (bootstrap standard
-  error 0.007; lack-of-fit standard error 0.028). At 30 steps and 25 to 200 bp
-  the exponent is 0.063 (bootstrap standard error 0.006). The analytic exponent
-  is 1/3, but the Whalley-Wilmott hedger's own cloud, measured the same way, has
-  0.227 at 120 steps and 0.041 at 30 steps. The discrete grid lowers both.
-- At 5 bp the asymptotic band and a tuned constant width tie, near entropic
-  risk 0.165, and both beat the network (0.175) and delta (0.244). At 30 steps
-  and 50 bp the asymptotic band (1.141) is worse than the tuned constant width
-  (1.055) and the network (1.052). At 200 bp the network (3.35) beats the
-  constant band (3.72) and the asymptotic band (4.37). Delta is 6.83.
-- Adding gamma as a feature does not sharpen the rule or move these numbers.
-  The previous position was already an input.
+## What is in the repository
 
-The plan is in [ROADMAP.md](ROADMAP.md) and dated notes are in [LOG.md](LOG.md).
-
-## Market environments
-
-A hedger does not import a volatility model. It is trained against an environment: a market plus a cost model. The market simulates the instruments you can trade and the features you may observe, and it prices the liability you are hedging. The P&L engine turns a position in those instruments into a terminal P&L. Risk measures see only that P&L.
-
-Black-Scholes is the first market. There is one instrument, the spot, and the feature is the spot. The premium is the analytic call price and the benchmark hedge is the analytic delta.
-
-Heston is the second, in `deephedge.heston`. Features are the spot and the variance. Instruments are the spot and a variance swap, and the swap's price is an instrument while the variance factor stays a feature. Paths are a full truncation Euler scheme. The premium is a quadrature of the characteristic function, and the benchmark hedge is delta in the spot plus a variance-swap hedge of vega. Rough Bergomi is next: its features have to carry the volatility's memory, and the simulator comes from the sibling repository [rough-volatility](https://github.com/coreyjpritchard/rough-volatility).
-
-Costs are not inside the simulator. `ProportionalCost`, `FixedPlusProportional` and `QuadraticCost` live in `deephedge/costs.py` and replace each other on the environment. One batch of paths can be scored at several costs. Every trade is charged, including the open and the liquidation at maturity. A proportional rate times the variance swap's mark barely charges that instrument, because the mark is an integrated variance of order 10^-3. Pass `unit=(None, 1.0)` to keep the spot on its price and charge one currency unit per variance swap. The swap's price is not requoted.
+- `deephedge/env.py`, `markets.py`: the market environment (instruments, features,
+  payoff, price, benchmark hedge, a pluggable cost) and the Black-Scholes simulator.
+- `deephedge/heston.py`: Heston by full truncation Euler, a variance swap, the
+  characteristic-function price and the model hedge.
+- `deephedge/costs.py`: proportional, fixed-plus-proportional and quadratic costs.
+- `deephedge/risk.py`: entropic risk and CVaR, in numpy and torch.
+- `deephedge/policy.py`, `train.py`: the networks, rollouts, end-to-end training and the
+  cached settings of each session.
+- `deephedge/band.py`: the Whalley-Wilmott half-width, edge-trading bands and the
+  summaries used in session 03.
+- `deephedge/figures.py`: every PNG in `docs/` and `docs/results.csv`.
+- `deephedge/export.py`: a compact JSON of paths, positions and P&L (provisional schema).
+- `sessions/00` to `03`: marimo apps, with static copies in `docs/*.html`.
+- `tests/`: checks against closed forms and known rates; `pytest --impl=exercises` runs
+  them against from-scratch implementations in `exercises/`.
 
 ```python
 from deephedge.env import BlackScholes, Environment, ProportionalCost
-from deephedge.heston import Heston
 
 market = BlackScholes(s0=100, strike=100, maturity=30 / 365, sigma=0.2)
 env = Environment(market, ProportionalCost(0.005))
 paths = market.simulate(20_000, 30, seed=1)
 pnl = env.pnl(paths, market.benchmark_positions(paths))
-
-heston = Heston()  # Buehler et al. (2019), section 5.2, under the pricing measure
-h_paths = heston.simulate(20_000, 30, seed=1)
-swap_cost = ProportionalCost(rate=(0.005, 0.002), unit=(None, 1.0))
-h_pnl = Environment(heston, swap_cost).pnl(h_paths, heston.benchmark_positions(h_paths))
 ```
 
-## Why
+## Reproduce
 
-Buehler, Gonon, Teichmann and Wood (2019, *Deep hedging*, Quantitative Finance 19(8))
-replace the hedging formula by a network trained end to end on simulated paths to
-minimise a convex risk measure of the hedged P&L. Costs, constraints and incomplete
-markets then cost nothing extra to model. Horvath, Teichmann and Zuric (2021, *Deep
-hedging under rough volatility*, Risks 9(7)) take this to rough Bergomi, where the
-volatility has memory and the hedge depends on the path, not only on today's spot. This
-repository builds up to that setting one session at a time.
-
-## How to run
-
-Python 3.11 or later; torch runs on CPU.
+With [uv](https://docs.astral.sh/uv/) and `make` (Python 3.11, torch on CPU, versions in
+`uv.lock`):
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"                       # once
-marimo run sessions/00_cost_of_hedging.py     # session 00; marimo edit to see the code
-marimo run sessions/01_heston_deep_hedge.py   # session 01, the 2019 Heston figure
-marimo run sessions/02_cost_models.py         # session 02, cost models and the swap unit
-marimo run sessions/03_whalley_wilmott.py     # session 03, the Whalley-Wilmott band
-pytest -m "not slow"                          # tests, a few seconds
-python -m deephedge.train                     # retrain the cached weights, about 3 minutes
-python -m deephedge.figures                   # redraw the README figure
+make reproduce    # uv sync, tests, then every figure and docs/results.csv (about 1.5 minutes)
 ```
 
-Each app opens with cached weights in `data/weights/`. Retraining takes about 30 seconds
-on four cores.
+The interactive sessions: `uv run marimo run sessions/03_whalley_wilmott.py` (and 00 to
+02). `uv run python -m deephedge.train` retrains the session 00 weights in `data/weights/`.
 
-## Layout
+## Limits
 
-- `deephedge/env.py` the market environment: instruments, features, payoff, price,
-  benchmark hedge, and a pluggable cost. Black-Scholes is the first market.
-- `deephedge/costs.py` proportional, fixed-plus-proportional and quadratic costs.
-  A `unit` is the notional the charge multiplies when the mark is the wrong one.
-- `deephedge/export.py` schema `deephedge.hedge/v1`, a compact JSON of paths,
-  positions and P&L. The example is `docs/examples/bs_delta_50bp.json`. The schema
-  is provisional, not frozen.
-- `deephedge/heston.py` the Heston market: full truncation Euler, a variance swap,
-  and the characteristic-function price and hedge.
-- `deephedge/markets.py` the Black-Scholes path simulator the environment draws from.
-- `deephedge/hedging.py` P&L of a hedged short option, one instrument or several.
-  The Black-Scholes price and delta are re-exported from `deephedge.env`.
-- `deephedge/risk.py` entropic risk and CVaR, numpy and torch. They take a P&L sample
-  and nothing about the market.
-- `deephedge/band.py` the Whalley-Wilmott half-width, the edge-trading rule, and
-  the cloud and power-law summaries used in session 03.
-- `deephedge/policy.py` the feature-based network, a gamma-feature variant, the
-  Heston network, a delta policy, and rollouts.
-- `deephedge/train.py` end-to-end training and the cached settings of sessions 00, 01 and 02.
-- `tests/` checks against closed forms and known rates; `pytest --impl=exercises` runs
-  them against the from-scratch implementations in `exercises/`.
+- Simulated markets only: Black-Scholes and Heston, no market data.
+- In Heston at zero cost the network does not beat the model hedge; the gap to the paper's
+  1.94 is the coarse variance step of the simulation.
+- Under a fixed charge the network loses to delta (1.79 against 1.61). It was trained on a
+  smooth surrogate of the charge, never holds exactly still, and so pays the exact charge
+  on almost every date.
+- The learned band's cost exponent sits below the analytic 1/3 at discrete rehedging.
+- One network per cost and per rehedging frequency, each trained on one seed.
+- Rough Bergomi is not yet integrated; its simulator is in
+  [rough-volatility](https://github.com/coreyjpritchard/rough-volatility).
+
+The plan is in [ROADMAP.md](ROADMAP.md) and dated notes are in [LOG.md](LOG.md).
+
+## References
+
+- Buehler, Gonon, Teichmann, Wood (2019). Deep hedging. Quantitative Finance 19(8).
+- Whalley, Wilmott (1997). An asymptotic analysis of an optimal hedging model for option
+  pricing with transaction costs. Mathematical Finance 7(3).
+- Horvath, Teichmann, Zuric (2021). Deep hedging under rough volatility. Risks 9(7).
 
 MIT licence.
