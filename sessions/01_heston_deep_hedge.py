@@ -47,18 +47,20 @@ def _(DEFAULT_HESTON, mo):
         label="Proportional cost (basis points of the price traded)",
     )
     retrain = mo.ui.run_button(label="Retrain with this cost", kind="warn")
-    mo.vstack([
-        mo.md(
-            "# At zero cost the network and the model hedge land together\n"
-            "A short 30-day at-the-money call in the Heston market of Buehler, "
-            "Gonon, Teichmann and Wood (2019), hedged with the spot and a variance "
-            "swap. The blue histogram is the model hedge, delta plus the swap weight "
-            "of vega. The red one is a network trained to minimise 50% CVaR. "
-            "The grey one uses only the spot. Move the cost."
-        ),
-        cost_bp,
-        retrain,
-    ])
+    mo.vstack(
+        [
+            mo.md(
+                "# At zero cost the network and the model hedge land together\n"
+                "A short 30-day at-the-money call in the Heston market of Buehler, "
+                "Gonon, Teichmann and Wood (2019), hedged with the spot and a variance "
+                "swap. The blue histogram is the model hedge, delta plus the swap weight "
+                "of vega. The red one is a network trained to minimise 50% CVaR. "
+                "The grey one uses only the spot. Move the cost."
+            ),
+            cost_bp,
+            retrain,
+        ]
+    )
     return cost_bp, retrain
 
 
@@ -150,10 +152,7 @@ def _(go, np, pnl, setup, stats):
             x=_centres,
             y=_density,
             width=_edges[1] - _edges[0],
-            name=(
-                f"{_name}: mean {_s['mean']:+.2f}, std {_s['std']:.2f}, "
-                f"CVaR {_s['cvar']:.2f}"
-            ),
+            name=(f"{_name}: mean {_s['mean']:+.2f}, std {_s['std']:.2f}, CVaR {_s['cvar']:.2f}"),
             marker_color=colours[_name],
             opacity=0.55,
         )
@@ -283,38 +282,41 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.vstack([
-        mo.md(
-            "## Try this\n"
-            "Write down a guess before you move the slider. Then open the answer."
-        ),
-        mo.accordion({
-            "1. Set the cost to 0. Do the red and blue histograms separate, "
-            "and what is the grey one saying?": mo.md(
-                "They do not separate in any way that matters: CVaR 0.31 for the "
-                "network against 0.30 for the model hedge, standard deviations 0.44 "
-                "and 0.40. The grey histogram is delta with no variance swap. Its "
-                "CVaR is 1.28 and its standard deviation 1.56. The tight hedge is "
-                "the swap."
+    mo.vstack(
+        [
+            mo.md(
+                "## Try this\nWrite down a guess before you move the slider. Then open the answer."
             ),
-            "2. Set the cost to 100 bp. Which book loses more?": mo.md(
-                "The model hedge. Its mean P&L is -2.79 and its CVaR is 3.50, because "
-                "it keeps trading the zero-cost weights. The network trained at 100 bp "
-                "has mean -0.42 and CVaR 1.54. If the note above the figure says the "
-                "weights were trained at 0 bp, you are looking at the zero-cost network "
-                "paying this cost, which behaves like the model hedge. Press retrain."
+            mo.accordion(
+                {
+                    "1. Set the cost to 0. Do the red and blue histograms separate, "
+                    "and what is the grey one saying?": mo.md(
+                        "They do not separate in any way that matters: CVaR 0.31 for the "
+                        "network against 0.30 for the model hedge, standard deviations 0.44 "
+                        "and 0.40. The grey histogram is delta with no variance swap. Its "
+                        "CVaR is 1.28 and its standard deviation 1.56. The tight hedge is "
+                        "the swap."
+                    ),
+                    "2. Set the cost to 100 bp. Which book loses more?": mo.md(
+                        "The model hedge. Its mean P&L is -2.79 and its CVaR is 3.50, because "
+                        "it keeps trading the zero-cost weights. The network trained at 100 bp "
+                        "has mean -0.42 and CVaR 1.54. If the note above the figure says the "
+                        "weights were trained at 0 bp, you are looking at the zero-cost network "
+                        "paying this cost, which behaves like the model hedge. Press retrain."
+                    ),
+                    "3. The paper's indifference price at alpha 0.5 is 1.94. What is ours?": mo.md(
+                        "1.99 for the model hedge on this sample: the quadrature premium 1.692 "
+                        "plus a CVaR of 0.30. The network is 2.00. Their printed risk-neutral "
+                        "price is 1.69, and 1.692 rounds to that. The indifference prices "
+                        "differ by about 0.05. The CVaR here has a bootstrap standard error "
+                        "of about 0.004, so the gap is not noise. It is the coarse variance "
+                        "step: simulated on 480 steps and hedged on the same 30 dates, the "
+                        "model hedge gives 1.934."
+                    ),
+                }
             ),
-            "3. The paper's indifference price at alpha 0.5 is 1.94. What is ours?": mo.md(
-                "1.99 for the model hedge on this sample: the quadrature premium 1.692 "
-                "plus a CVaR of 0.30. The network is 2.00. Their printed risk-neutral "
-                "price is 1.69, and 1.692 rounds to that. The indifference prices "
-                "differ by about 0.05. The CVaR here has a bootstrap standard error "
-                "of about 0.004, so the gap is not noise. It is the coarse variance "
-                "step: simulated on 480 steps and hedged on the same 30 dates, the "
-                "model hedge gives 1.934."
-            ),
-        }),
-    ])
+        ]
+    )
     return
 
 

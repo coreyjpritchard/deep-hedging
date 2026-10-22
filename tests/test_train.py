@@ -27,8 +27,18 @@ def tiny_run():
     torch.manual_seed(0)
     policy = MLPPolicy(K, T, width=16)
     before = objective(policy, paths, payoff, risk, COST, premium)
-    result = train(policy, paths, payoff, risk, COST, epochs=40, lr=0.01, seed=0,
-                   premium=premium, batch_size=500)
+    result = train(
+        policy,
+        paths,
+        payoff,
+        risk,
+        COST,
+        epochs=40,
+        lr=0.01,
+        seed=0,
+        premium=premium,
+        batch_size=500,
+    )
     return paths, premium, before, result
 
 
@@ -79,7 +89,10 @@ def test_cached_default_network_beats_delta_out_of_sample():
         policy, trained_for = cached_policy(replace(s, cost=cost))
         assert trained_for.cost == cost
         net = pnl_from_positions(
-            paths, rollout_numpy(policy, paths, s.maturity), call_payoff(s.strike), cost,
+            paths,
+            rollout_numpy(policy, paths, s.maturity),
+            call_payoff(s.strike),
+            cost,
             s.premium,
         )
         delta = delta_hedge_pnl(paths, s.strike, s.maturity, s.sigma, s.r, cost)

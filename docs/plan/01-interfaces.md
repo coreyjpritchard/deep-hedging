@@ -101,8 +101,10 @@ more than 5,000 paths.
 ```python
 @dataclass(frozen=True)
 class InstrumentSet:
-    names: tuple[str, ...]                   # subset of generator instruments, plus derived
-    derived: tuple[DerivedInstrument, ...]   # e.g. VarianceSwapMark(tenor), ListedCall(strike, tenor)
+    # subset of generator instruments, plus derived
+    names: tuple[str, ...]
+    # e.g. VarianceSwapMark(tenor), ListedCall(strike, tenor)
+    derived: tuple[DerivedInstrument, ...]
 ```
 
 A derived instrument needs a pricer and adds a column to `instruments` before the

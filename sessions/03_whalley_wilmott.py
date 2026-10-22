@@ -67,17 +67,19 @@ def _(mo):
         value="Session 00 inputs",
         label="Learned rule drawn on the band",
     )
-    mo.vstack([
-        mo.md(
-            "# The learned band against Whalley and Wilmott\n"
-            "A short 30-day at-the-money call, Black-Scholes, proportional cost only. "
-            "The shade is the asymptotic no-trade band. The dots are positions the "
-            "network holds. The black curves are its decision rule."
-        ),
-        regime,
-        time_left,
-        feature,
-    ])
+    mo.vstack(
+        [
+            mo.md(
+                "# The learned band against Whalley and Wilmott\n"
+                "A short 30-day at-the-money call, Black-Scholes, proportional cost only. "
+                "The shade is the asymptotic no-trade band. The dots are positions the "
+                "network holds. The black curves are its decision rule."
+            ),
+            regime,
+            time_left,
+            feature,
+        ]
+    )
     return feature, regime, time_left
 
 
@@ -208,9 +210,7 @@ def _(
                     for _ in range(400):
                         _idx = _rng.integers(0, _spot.size, size=_spot.size)
                         _draw = [
-                            cloud_half_width(
-                                _col[_idx], _spot[_idx], _delta[_idx], 99.0, 101.0
-                            )
+                            cloud_half_width(_col[_idx], _spot[_idx], _delta[_idx], 99.0, 101.0)
                             for _col in _columns
                         ]
                         _boot.append(fit_power_exponent(_costs, _draw)["exponent"])
@@ -281,37 +281,54 @@ def _(
 
     fig_band = go.Figure()
     fig_band.add_scatter(
-        x=_spots, y=_delta + _width, mode="lines", line={"width": 0},
-        showlegend=False, hoverinfo="skip",
+        x=_spots,
+        y=_delta + _width,
+        mode="lines",
+        line={"width": 0},
+        showlegend=False,
+        hoverinfo="skip",
     )
     fig_band.add_scatter(
-        x=_spots, y=_delta - _width, mode="lines", line={"width": 0},
-        fill="tonexty", name="Whalley-Wilmott band",
-        fillcolor="rgba(31, 119, 180, 0.18)", hoverinfo="skip",
+        x=_spots,
+        y=_delta - _width,
+        mode="lines",
+        line={"width": 0},
+        fill="tonexty",
+        name="Whalley-Wilmott band",
+        fillcolor="rgba(31, 119, 180, 0.18)",
+        hoverinfo="skip",
     )
     fig_band.add_scatter(
-        x=_spots, y=_delta, name="Black-Scholes delta",
+        x=_spots,
+        y=_delta,
+        name="Black-Scholes delta",
         line={"color": _colours["band"], "width": 2.5},
     )
     fig_band.add_scatter(
-        x=_spots, y=_rule["centre"], name="learned centre",
+        x=_spots,
+        y=_rule["centre"],
+        name="learned centre",
         line={"color": _colours["net"], "width": 2.5},
     )
     fig_band.add_scattergl(
-        x=_spot_k[_show], y=_held[_show], mode="markers",
+        x=_spot_k[_show],
+        y=_held[_show],
+        mode="markers",
         marker={"color": _colours["net"], "size": 3, "opacity": 0.25},
-        name="position held on each path", hoverinfo="skip",
+        name="position held on each path",
+        hoverinfo="skip",
     )
     for _p, _y, _dash in zip(_prevs, _grid, ["dot", "dash", "dashdot"], strict=True):
         fig_band.add_scatter(
-            x=_spots, y=_y, name=f"new position if it holds {_p:.1f}",
+            x=_spots,
+            y=_y,
+            name=f"new position if it holds {_p:.1f}",
             line={"color": _colours["rule"], "dash": _dash, "width": 1.6},
         )
     _days = _frac * _market.maturity * 365
     fig_band.update_layout(
         title=(
-            f"(a) Band with {_days:.1f} days left, cost {_cost * 1e4:.0f} bp, "
-            f"{_n} steps, {_label}"
+            f"(a) Band with {_days:.1f} days left, cost {_cost * 1e4:.0f} bp, {_n} steps, {_label}"
         ),
         xaxis_title="spot S",
         xaxis_range=[85, 115],
@@ -357,14 +374,26 @@ def _(
     fig_scale = go.Figure()
     _grid_costs = np.geomspace(0.0005, 0.02, 40)
     _tau_mid = _market.maturity / 2
-    _ww_curve = np.array([
-        float(whalley_wilmott_half_width(
-            100.0, _tau_mid, float(_c), DEFAULT.lam, _market.strike, _market.sigma, _market.r
-        ))
-        for _c in _grid_costs
-    ])
+    _ww_curve = np.array(
+        [
+            float(
+                whalley_wilmott_half_width(
+                    100.0,
+                    _tau_mid,
+                    float(_c),
+                    DEFAULT.lam,
+                    _market.strike,
+                    _market.sigma,
+                    _market.r,
+                )
+            )
+            for _c in _grid_costs
+        ]
+    )
     fig_scale.add_scatter(
-        x=_grid_costs * 1e4, y=_ww_curve, name="Whalley-Wilmott at S = 100, t = T/2",
+        x=_grid_costs * 1e4,
+        y=_ww_curve,
+        name="Whalley-Wilmott at S = 100, t = T/2",
         line={"color": "#1f77b4", "width": 2.5},
     )
     _anchor = book["rows"][(120, 0.0005)]["snap"]["mlp"]["cloud"]
@@ -400,7 +429,10 @@ def _(
         _cs = [c for (_nn, c) in book["rows"] if _nn == _n_i]
         _ws = [book["rows"][(_n_i, c)]["snap"][_kind_i]["cloud"] for c in _cs]
         fig_scale.add_scatter(
-            x=np.asarray(_cs) * 1e4, y=_ws, mode="lines+markers", name=_st["name"],
+            x=np.asarray(_cs) * 1e4,
+            y=_ws,
+            mode="lines+markers",
+            name=_st["name"],
             line={"color": _st["color"], "width": 1.5},
             marker={"symbol": _st["symbol"], "size": 9},
         )
@@ -421,7 +453,10 @@ def _(
         _cs = [c for (_nn, c) in book["rows"] if _nn == _n_i]
         _off = [book["rows"][(_n_i, c)]["snap"][_kind_i]["centre_offset"] for c in _cs]
         fig_centre.add_scatter(
-            x=np.asarray(_cs) * 1e4, y=_off, mode="lines+markers", name=_st["name"],
+            x=np.asarray(_cs) * 1e4,
+            y=_off,
+            mode="lines+markers",
+            name=_st["name"],
             line={"color": _st["color"], "width": 1.5},
             marker={"symbol": _st["symbol"], "size": 9},
         )
@@ -505,12 +540,8 @@ def _(book, mo):
         ranking = ", then ".join(names[name] for name in order)
         delta = scores["delta"]["entropic"]
         gap = scores[order[1]]["entropic"] - scores[order[0]]["entropic"]
-        se = (
-            scores[order[0]]["entropic_se"] ** 2 + scores[order[1]]["entropic_se"] ** 2
-        ) ** 0.5
-        tie = (
-            f" The first two differ by {gap:.3f}, against a combined standard error of {se:.3f}."
-        )
+        se = (scores[order[0]]["entropic_se"] ** 2 + scores[order[1]]["entropic_se"] ** 2) ** 0.5
+        tie = f" The first two differ by {gap:.3f}, against a combined standard error of {se:.3f}."
         return (
             f"At {label}, ordered by entropic risk, the bands are {ranking}. "
             f"Delta is {delta:.3f}.{tie}"
@@ -604,8 +635,8 @@ the hedger trades to the nearer edge, not to delta.
 
 ## What this sample says
 
-The analytic exponent is {_ww_fit['exponent']:.2f}, with lack-of-fit standard
-error {_ww_fit['lack_of_fit_se']:.2f}. That is the identity in hypothesis 1, on
+The analytic exponent is {_ww_fit["exponent"]:.2f}, with lack-of-fit standard
+error {_ww_fit["lack_of_fit_se"]:.2f}. That is the identity in hypothesis 1, on
 both grids. It is the exponent of the formula at the money, not of a cloud.
 
 The 120-step cloud, session 00 inputs, has exponent {_exp(120, "mlp")}. The
@@ -633,8 +664,8 @@ this session; the cells above do not compute them.
 
 The no-trade half-width, defined as the largest deviation from the centre that
 still trades less than 0.005 shares, is a different object. Its exponent is
-{_nt['exponent']:.2f} (lack-of-fit SE {_nt['lack_of_fit_se']:.2f}) at 30 steps
-and {_nt120['exponent']:.2f} (lack-of-fit SE {_nt120['lack_of_fit_se']:.2f}) at
+{_nt["exponent"]:.2f} (lack-of-fit SE {_nt["lack_of_fit_se"]:.2f}) at 30 steps
+and {_nt120["exponent"]:.2f} (lack-of-fit SE {_nt120["lack_of_fit_se"]:.2f}) at
 120 steps. A steeper soft slope stays inside that absolute tolerance farther
 from the centre, so this exponent can be large while the cloud is flat. It is
 not the cube-root test.

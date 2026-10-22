@@ -36,30 +36,40 @@ def _():
 @app.cell(hide_code=True)
 def _(DEFAULT, mo):
     cost_bp = mo.ui.slider(
-        0, 200, step=25, value=round(DEFAULT.cost * 1e4), show_value=True,
+        0,
+        200,
+        step=25,
+        value=round(DEFAULT.cost * 1e4),
+        show_value=True,
         label="Proportional cost (basis points of notional traded)",
     )
     n_steps = mo.ui.slider(
-        steps=[10, 30, 60, 120], value=DEFAULT.n_steps, show_value=True,
+        steps=[10, 30, 60, 120],
+        value=DEFAULT.n_steps,
+        show_value=True,
         label="Rehedging steps over 30 days",
     )
     lam = mo.ui.slider(
-        steps=[0.1, 0.3, 1.0, 3.0, 10.0], value=DEFAULT.lam, show_value=True,
+        steps=[0.1, 0.3, 1.0, 3.0, 10.0],
+        value=DEFAULT.lam,
+        show_value=True,
         label="Risk aversion: entropic lambda",
     )
     retrain = mo.ui.run_button(label="Retrain with these settings", kind="warn")
-    mo.vstack([
-        mo.md(
-            "# Delta hedging loses money when trading costs money\n"
-            "A short 30-day at-the-money call (S0 = K = 100, sigma = 20%), hedged three "
-            "ways: Black-Scholes delta, a small neural network trained to minimise the "
-            "entropic risk of the hedged P&L, and no hedge at all. Move the sliders."
-        ),
-        cost_bp,
-        n_steps,
-        lam,
-        retrain,
-    ])
+    mo.vstack(
+        [
+            mo.md(
+                "# Delta hedging loses money when trading costs money\n"
+                "A short 30-day at-the-money call (S0 = K = 100, sigma = 20%), hedged three "
+                "ways: Black-Scholes delta, a small neural network trained to minimise the "
+                "entropic risk of the hedged P&L, and no hedge at all. Move the sliders."
+            ),
+            cost_bp,
+            n_steps,
+            lam,
+            retrain,
+        ]
+    )
     return cost_bp, lam, n_steps, retrain
 
 
@@ -187,18 +197,24 @@ def _(
 
     fig_band = go.Figure()
     fig_band.add_scattergl(
-        x=_spot[_show], y=_held[_show], mode="markers",
+        x=_spot[_show],
+        y=_held[_show],
+        mode="markers",
         marker={"color": colours["Network"], "size": 3, "opacity": 0.25},
         name="position the network holds at T/2, one dot per path",
         hoverinfo="skip",
     )
     fig_band.add_scatter(
-        x=_spots, y=_delta, name="Black-Scholes delta",
+        x=_spots,
+        y=_delta,
+        name="Black-Scholes delta",
         line={"color": colours["Delta hedge"], "width": 3},
     )
     for _p, _y, _dash in zip(_shown, _positions, ["dot", "dash", "dashdot"], strict=True):
         fig_band.add_scatter(
-            x=_spots, y=_y, name=f"network's new position if it holds {_p:.1f}",
+            x=_spots,
+            y=_y,
+            name=f"network's new position if it holds {_p:.1f}",
             line={"color": "#2b2b2b", "dash": _dash, "width": 1.8},
         )
     fig_band.update_layout(
@@ -331,39 +347,42 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.vstack([
-        mo.md(
-            "## Try this\n"
-            "Write down a guess before you move the slider. Then open the answer."
-        ),
-        mo.accordion({
-            "1. Set the cost to 0. Does the network beat delta hedging? What happens "
-            "to the band in panel (b)?": mo.md(
-                "No. With no costs the network has nothing to gain from inaction, so it "
-                "learns delta: the two histograms coincide (entropic risk 0.062 against "
-                "0.063 on the default sample) and the dots and black curves in panel "
-                "(b) fall onto the blue line."
+    mo.vstack(
+        [
+            mo.md(
+                "## Try this\nWrite down a guess before you move the slider. Then open the answer."
             ),
-            "2. Set the cost to 100 bp and move the steps from 10 to 120. By how much "
-            "does delta hedging's mean P&L fall? And the network's?": mo.md(
-                "Delta hedging's mean P&L goes from -1.96 at 10 steps to -4.48 at 120. "
-                "The rebalancing cost grows like the square root of $n$, so four times "
-                "the steps costs about twice as much. The network, trained at 30 steps "
-                "and evaluated at the others, goes from -1.26 to -1.89, and its "
-                "standard deviation falls: a band policy does nothing inside the band "
-                "however often it is allowed to look. Retrain at 120 steps and compare."
+            mo.accordion(
+                {
+                    "1. Set the cost to 0. Does the network beat delta hedging? What happens "
+                    "to the band in panel (b)?": mo.md(
+                        "No. With no costs the network has nothing to gain from inaction, so it "
+                        "learns delta: the two histograms coincide (entropic risk 0.062 against "
+                        "0.063 on the default sample) and the dots and black curves in panel "
+                        "(b) fall onto the blue line."
+                    ),
+                    "2. Set the cost to 100 bp and move the steps from 10 to 120. By how much "
+                    "does delta hedging's mean P&L fall? And the network's?": mo.md(
+                        "Delta hedging's mean P&L goes from -1.96 at 10 steps to -4.48 at 120. "
+                        "The rebalancing cost grows like the square root of $n$, so four times "
+                        "the steps costs about twice as much. The network, trained at 30 steps "
+                        "and evaluated at the others, goes from -1.26 to -1.89, and its "
+                        "standard deviation falls: a band policy does nothing inside the band "
+                        "however often it is allowed to look. Retrain at 120 steps and compare."
+                    ),
+                    "3. Go from 50 bp to 100 bp. How much wider does the band get at the "
+                    "money?": mo.md(
+                        "Whalley and Wilmott predict a factor $2^{1/3} \\approx 1.26$, not 2. "
+                        "The network's band barely widens: near S = 100 the spread of its "
+                        "positions around delta grows by about 5 per cent, and the band moves "
+                        "upwards instead, so the network holds more stock than delta. Small "
+                        "costs, discrete rehedging and the network's soft band are three "
+                        "candidate reasons. Session 03 separates them."
+                    ),
+                }
             ),
-            "3. Go from 50 bp to 100 bp. How much wider does the band get at the "
-            "money?": mo.md(
-                "Whalley and Wilmott predict a factor $2^{1/3} \\approx 1.26$, not 2. "
-                "The network's band barely widens: near S = 100 the spread of its "
-                "positions around delta grows by about 5 per cent, and the band moves "
-                "upwards instead, so the network holds more stock than delta. Small "
-                "costs, discrete rehedging and the network's soft band are three "
-                "candidate reasons. Session 03 separates them."
-            ),
-        }),
-    ])
+        ]
+    )
     return
 
 

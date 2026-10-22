@@ -45,9 +45,7 @@ def test_zero_rate_matches_the_session_00_scale():
 
 def test_width_is_exactly_cube_root_in_cost():
     costs = np.array([0.0005, 0.001, 0.0025, 0.005, 0.02])
-    widths = [
-        float(whalley_wilmott_half_width(S0, T / 2, c, 1.0, K, SIGMA, 0.0)) for c in costs
-    ]
+    widths = [float(whalley_wilmott_half_width(S0, T / 2, c, 1.0, K, SIGMA, 0.0)) for c in costs]
     fit = fit_power_exponent(costs, widths)
     assert fit["exponent"] == pytest.approx(1.0 / 3.0, abs=1e-10)
     assert fit["se"] == pytest.approx(0.0, abs=1e-8)

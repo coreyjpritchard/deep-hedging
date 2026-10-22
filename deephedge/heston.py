@@ -240,10 +240,7 @@ def _cumulants(spot, variance, tau, kappa, theta, xi, rho, r):
     e1 = np.exp(-kappa * tau)
     e2 = np.exp(-2.0 * kappa * tau)
     c1 = (
-        np.log(spot)
-        + r * tau
-        + (theta - variance) * (1.0 - e1) / (2.0 * kappa)
-        - 0.5 * theta * tau
+        np.log(spot) + r * tau + (theta - variance) * (1.0 - e1) / (2.0 * kappa) - 0.5 * theta * tau
     )
     c2 = (variance / (4.0 * kappa**3)) * (
         4.0 * kappa**2 * (1.0 + (rho * xi * tau - 1.0) * e1)

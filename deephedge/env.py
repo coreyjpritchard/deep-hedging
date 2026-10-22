@@ -119,9 +119,7 @@ class Paths:
         features = np.asarray(self.features, dtype=float)
         discount = np.asarray(self.discount, dtype=float)
         if instruments.ndim != 3:
-            raise ValueError(
-                f"instruments must have shape (m, n + 1, d), got {instruments.shape}"
-            )
+            raise ValueError(f"instruments must have shape (m, n + 1, d), got {instruments.shape}")
         m, n_plus, _d = instruments.shape
         if features.shape[:2] != (m, n_plus):
             raise ValueError(
@@ -132,8 +130,7 @@ class Paths:
             raise ValueError(f"time must have shape ({n_plus},), got {time.shape}")
         if discount.shape != (n_plus,) and discount.shape != (m, n_plus):
             raise ValueError(
-                f"discount must have shape ({n_plus},) or ({m}, {n_plus}), "
-                f"got {discount.shape}"
+                f"discount must have shape ({n_plus},) or ({m}, {n_plus}), got {discount.shape}"
             )
         object.__setattr__(self, "time", time)
         object.__setattr__(self, "instruments", instruments)
@@ -270,14 +267,10 @@ def _as_positions(positions: np.ndarray, n_instruments: int) -> np.ndarray:
     pos = np.asarray(positions, dtype=float)
     if pos.ndim == 2:
         if n_instruments != 1:
-            raise ValueError(
-                f"positions have shape {pos.shape}; expected (m, n, {n_instruments})"
-            )
+            raise ValueError(f"positions have shape {pos.shape}; expected (m, n, {n_instruments})")
         return pos[:, :, None]
     if pos.ndim != 3 or pos.shape[-1] != n_instruments:
-        raise ValueError(
-            f"positions have shape {pos.shape}; expected (m, n, {n_instruments})"
-        )
+        raise ValueError(f"positions have shape {pos.shape}; expected (m, n, {n_instruments})")
     return pos
 
 
@@ -301,9 +294,7 @@ def terminal_pnl(
     prices = paths.discounted_instruments()
     pos = _as_positions(positions, prices.shape[-1])
     if pos.shape[0] != prices.shape[0] or pos.shape[1] != prices.shape[1] - 1:
-        raise ValueError(
-            f"positions shape {pos.shape} does not match prices shape {prices.shape}"
-        )
+        raise ValueError(f"positions shape {pos.shape} does not match prices shape {prices.shape}")
     gains = (pos * np.diff(prices, axis=1)).sum(axis=(1, 2))
     pay = np.asarray(payoff, dtype=float) * paths.discount_terminal()
     costs = as_cost(cost).amount(prices, pos)
@@ -343,9 +334,7 @@ class Environment:
 
 def _check_maturity(paths: Paths, maturity: float) -> None:
     if not np.isclose(paths.time[-1], maturity, rtol=0.0, atol=1e-12):
-        raise ValueError(
-            f"path ends at {paths.time[-1]}, market maturity is {maturity}"
-        )
+        raise ValueError(f"path ends at {paths.time[-1]}, market maturity is {maturity}")
 
 
 @dataclass(frozen=True)
@@ -399,9 +388,7 @@ class BlackScholes(Market):
         Brownian motions should document the order it draws them from that
         same generator.
         """
-        spot = bs_paths(
-            m, n, self.maturity, self.sigma, s0=self.s0, mu=self.mu, seed=seed
-        )
+        spot = bs_paths(m, n, self.maturity, self.sigma, s0=self.s0, mu=self.mu, seed=seed)
         return self.paths_from_spot(spot)
 
     def paths_from_spot(self, spot: np.ndarray) -> Paths:
