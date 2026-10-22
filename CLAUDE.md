@@ -1,6 +1,6 @@
-# deep-hedging: instructions for builders
+# deep-hedging: conventions
 
-Public repository, part of Corey's PhD preparation. The package is `deephedge`. Apps in
+Public repository, a personal research project in mathematical finance. The package is `deephedge`. Apps in
 `sessions/` and tests in `tests/` import from it and hold no logic of their own. Current
 state and next session are at the top of `LOG.md`.
 
@@ -9,7 +9,7 @@ state and next session are at the top of `LOG.md`.
 - One question per session, one sitting, one marimo app in `sessions/`. Figure and sliders
   first, explanation below, proofs only where the proof is the point.
 - Levels: 0 play (a slider and a guess), 1 reproduce (a figure from a paper), 2 implement
-  (Corey writes it, tests check it), 3 extend (change one assumption, log the result).
+  (written by hand, tests check it), 3 extend (change one assumption, log the result).
 - Level 3 results are exploratory: report effect size, direction and the next specification.
   Never conclude that nothing is there.
 
@@ -30,4 +30,4 @@ state and next session are at the top of `LOG.md`.
 ## Git
 
 - Commit directly to `main`. A commit per session, message `sNN: <what it established>`.
-- Tag `sNN` when Corey has worked through the session.
+- Tag `sNN` once the session has been worked through.
