@@ -59,24 +59,24 @@ def _(mo):
         inline=True,
         label="Market",
     )
-    mo.vstack([
-        mo.md(
-            "# The cost model changes what the network holds\n"
-            "A short 30-day at-the-money call. Pick the market and the cost. "
-            "The histogram is the hedged P&L. The second panel is the position "
-            "the network learned for that cost."
-        ),
-        market,
-    ])
+    mo.vstack(
+        [
+            mo.md(
+                "# The cost model changes what the network holds\n"
+                "A short 30-day at-the-money call. Pick the market and the cost. "
+                "The histogram is the hedged P&L. The second panel is the position "
+                "the network learned for that cost."
+            ),
+            market,
+        ]
+    )
     return (market,)
 
 
 @app.cell(hide_code=True)
 def _(COST_SESSION, market, mo):
     _options = {
-        spec["label"]: key
-        for key, spec in COST_SESSION.items()
-        if spec["market"] == market.value
+        spec["label"]: key for key, spec in COST_SESSION.items() if spec["market"] == market.value
     }
     _default = "bs-prop" if market.value == "bs" else "heston-mark"
     _name = next(label for label, key in _options.items() if key == _default)
@@ -196,9 +196,7 @@ def _(Environment, bench, mkt, model, net, np, sim, spec, summarise):
             "Spot only": spot_only,
         }
     pnl = {name: env.pnl(sim, pos) for name, pos in books.items()}
-    stats = {
-        name: summarise(x, spec["alpha"], spec["lam"]) for name, x in pnl.items()
-    }
+    stats = {name: summarise(x, spec["alpha"], spec["lam"]) for name, x in pnl.items()}
     return pnl, stats
 
 
@@ -224,10 +222,7 @@ def _(go, np, pnl, scale, spec, stats):
                 f"CVaR {_s['cvar']:.2f}, entropic {_s['entropic']:.2f}"
             )
         else:
-            _legend = (
-                f"{_name}: mean {_s['mean']:+.2f}, std {_s['std']:.2f}, "
-                f"CVaR {_s['cvar']:.2f}"
-            )
+            _legend = f"{_name}: mean {_s['mean']:+.2f}, std {_s['std']:.2f}, CVaR {_s['cvar']:.2f}"
         fig_pnl.add_bar(
             x=_centres,
             y=_density,
@@ -242,10 +237,7 @@ def _(go, np, pnl, scale, spec, stats):
         _level = "CVaR at 0.5"
     fig_pnl.update_layout(
         barmode="overlay",
-        title=(
-            f"(a) Terminal P&L, {spec['label']}, "
-            f"charge x{scale.value:g}. {_level}."
-        ),
+        title=(f"(a) Terminal P&L, {spec['label']}, charge x{scale.value:g}. {_level}."),
         xaxis_title="P&L (premium - payoff + gains - costs)",
         yaxis_title="density",
         legend={"orientation": "h", "y": -0.25},
@@ -310,9 +302,7 @@ def _(
             yaxis_range=[-0.05, 1.05],
         )
     else:
-        _spot, _swap = held_instrument(
-            policy, sim.features, sim.time, 2, _k, instrument=1
-        )
+        _spot, _swap = held_instrument(policy, sim.features, sim.time, 2, _k, instrument=1)
         _n_show = min(3_000, int(_spot.size))
         _show = np.random.default_rng(0).choice(_spot.size, size=_n_show, replace=False)
         _spots = np.linspace(80, 120, 81)
@@ -366,14 +356,13 @@ def _(fig_pnl, fig_pos, mo, n_paths, scale, source, spec):
             f"The histogram uses {scale.value:g} times the training cost. "
             "The position panel does not: it is the network trained at scale 1."
         )
-    mo.vstack([
-        mo.md(
-            f"Network: {source}, {spec['label']}. "
-            f"{n_paths:,} paths, seed 12345. {_charge}"
-        ),
-        fig_pnl,
-        fig_pos,
-    ])
+    mo.vstack(
+        [
+            mo.md(f"Network: {source}, {spec['label']}. {n_paths:,} paths, seed 12345. {_charge}"),
+            fig_pnl,
+            fig_pos,
+        ]
+    )
     return
 
 
@@ -488,41 +477,47 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.vstack([
-        mo.md("## Try this\nWrite down a guess before you move the control. Then open the answer."),
-        mo.accordion({
-            "1. Set the cost to no cost. Where do the black curves sit?": mo.md(
-                "On delta. Entropic risk is 0.062 for the network and 0.063 for "
-                "delta, on 20 000 paths. The incoming position is irrelevant, so "
-                "the three curves lie on top of each other and on the blue line."
+    mo.vstack(
+        [
+            mo.md(
+                "## Try this\nWrite down a guess before you move the control. Then open the answer."
             ),
-            "2. Compare proportional 50 bp with quadratic impact 0.02. "
-            "Which one punishes delta more?": mo.md(
-                "The quadratic cost. Delta's entropic risk goes from 1.54 at "
-                "50 bp to 2.46 under impact 0.02, because the open and the "
-                "close are large trades and the charge squares them. The "
-                "network's entropic risk is 1.05 and 0.94. Both still show a "
-                "band: the black curves separate."
+            mo.accordion(
+                {
+                    "1. Set the cost to no cost. Where do the black curves sit?": mo.md(
+                        "On delta. Entropic risk is 0.062 for the network and 0.063 for "
+                        "delta, on 20 000 paths. The incoming position is irrelevant, so "
+                        "the three curves lie on top of each other and on the blue line."
+                    ),
+                    "2. Compare proportional 50 bp with quadratic impact 0.02. "
+                    "Which one punishes delta more?": mo.md(
+                        "The quadratic cost. Delta's entropic risk goes from 1.54 at "
+                        "50 bp to 2.46 under impact 0.02, because the open and the "
+                        "close are large trades and the charge squares them. The "
+                        "network's entropic risk is 1.05 and 0.94. Both still show a "
+                        "band: the black curves separate."
+                    ),
+                    "3. Select the fixed charge of 0.05. Does a band appear?": mo.md(
+                        "Not with this network. At S = 100 the rule returns about 0.55 "
+                        "whether it arrives holding 0.2, 0.5 or 0.8, and its entropic risk "
+                        "is 1.79 against delta's 1.61. It never holds exactly still, so "
+                        "the exact charge falls on 97 per cent of its trade slots, although "
+                        "only 15 per cent of its changes between open and liquidation "
+                        "exceed 0.01 shares. The training surrogate charged those small "
+                        "changes almost nothing. That mismatch is what this run shows."
+                    ),
+                    "4. Switch to Heston. Then switch the swap from the mark to "
+                    "the per-contract charge. What happens to the red dots?": mo.md(
+                        "They leave a cloud around a few hundred swaps and sit on zero. "
+                        "Mean absolute swap holding goes from 232 to 0.005. The model "
+                        "hedge's mean P&L goes from -1.41 to -7.34, because that book "
+                        "keeps the swap and now pays 0.002 per contract, including "
+                        "liquidation."
+                    ),
+                }
             ),
-            "3. Select the fixed charge of 0.05. Does a band appear?": mo.md(
-                "Not with this network. At S = 100 the rule returns about 0.55 "
-                "whether it arrives holding 0.2, 0.5 or 0.8, and its entropic risk "
-                "is 1.79 against delta's 1.61. It never holds exactly still, so "
-                "the exact charge falls on 97 per cent of its trade slots, although "
-                "only 15 per cent of its changes between open and liquidation "
-                "exceed 0.01 shares. The training surrogate charged those small "
-                "changes almost nothing. That mismatch is what this run shows."
-            ),
-            "4. Switch to Heston. Then switch the swap from the mark to "
-            "the per-contract charge. What happens to the red dots?": mo.md(
-                "They leave a cloud around a few hundred swaps and sit on zero. "
-                "Mean absolute swap holding goes from 232 to 0.005. The model "
-                "hedge's mean P&L goes from -1.41 to -7.34, because that book "
-                "keeps the swap and now pays 0.002 per contract, including "
-                "liquidation."
-            ),
-        }),
-    ])
+        ]
+    )
     return
 
 

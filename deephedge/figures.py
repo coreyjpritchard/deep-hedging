@@ -74,13 +74,27 @@ def band_figure(path: Path = DOCS / "00_no_trade_band.png") -> Path:
     for ax, cost in zip(axes, (0.0, s.cost), strict=True):
         policy, trained_for = cached_policy(replace(s, cost=cost))
         spot, held = held_positions(policy, paths, s.maturity, k)
-        ax.scatter(spot[show], held[show], s=2, color="tab:red", alpha=0.25, lw=0,
-                   label="network's holding after the day-15 rehedge, one dot per path")
+        ax.scatter(
+            spot[show],
+            held[show],
+            s=2,
+            color="tab:red",
+            alpha=0.25,
+            lw=0,
+            label="network's holding after the day-15 rehedge, one dot per path",
+        )
         ax.plot(spots, delta, color="tab:blue", lw=2.5, label="Black-Scholes delta")
-        for p, y, ls in zip(shown, position_grid(policy, t, spots, shown), [":", "--", "-."],
-                            strict=True):
-            ax.plot(spots, np.clip(y, -0.05, 1.05), color="0.15", ls=ls, lw=1.4,
-                    label=f"network's new position if it currently holds {p:.1f}")
+        for p, y, ls in zip(
+            shown, position_grid(policy, t, spots, shown), [":", "--", "-."], strict=True
+        ):
+            ax.plot(
+                spots,
+                np.clip(y, -0.05, 1.05),
+                color="0.15",
+                ls=ls,
+                lw=1.4,
+                label=f"network's new position if it currently holds {p:.1f}",
+            )
         bp = trained_for.cost * 1e4
         ax.set_title("no trading cost" if cost == 0 else f"{bp:.0f} bp proportional cost")
         ax.set_xlabel("spot S on day 15")
@@ -90,9 +104,12 @@ def band_figure(path: Path = DOCS / "00_no_trade_band.png") -> Path:
     axes[0].set_ylabel("position in the underlying (shares)")
     axes[0].legend(loc="upper left", fontsize=7.5, frameon=False, markerscale=4)
     fig.suptitle("With trading costs the network stops tracking delta and holds a band around it")
-    bottom = _caption(fig, f"{BS_MARKET}, 30 daily rehedges. Network trained on seed 0 to minimise "
-             f"entropic risk (lambda = 1); dots are 3,000 of {s.m_eval:,} fresh paths, "
-             f"seed {SEED}.")
+    bottom = _caption(
+        fig,
+        f"{BS_MARKET}, 30 daily rehedges. Network trained on seed 0 to minimise "
+        f"entropic risk (lambda = 1); dots are 3,000 of {s.m_eval:,} fresh paths, "
+        f"seed {SEED}.",
+    )
     fig.tight_layout(rect=(0, bottom, 1, 1))
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=110)
@@ -112,8 +129,16 @@ def session00_numbers() -> list[dict]:
         ("network", rollout_paths(policy, sim)),
     ):
         st = summarise(env.pnl(sim, pos), s.alpha, s.lam)
-        rows.append({"session": "00", "case": "50 bp, 30 steps", "hedger": name,
-                     "mean": st["mean"], "std": st["std"], "entropic": st["entropic"]})
+        rows.append(
+            {
+                "session": "00",
+                "case": "50 bp, 30 steps",
+                "hedger": name,
+                "mean": st["mean"],
+                "std": st["std"],
+                "entropic": st["entropic"],
+            }
+        )
     rows.append({"session": "00", "case": "premium", "hedger": "", "mean": s.premium})
     s100 = replace(s, cost=0.01)
     policy100, _ = cached_policy(s100)
@@ -126,8 +151,16 @@ def session00_numbers() -> list[dict]:
             ("network trained at 30 steps", rollout_paths(policy100, sim)),
         ):
             st = summarise(env.pnl(sim, pos), sn.alpha, sn.lam)
-            rows.append({"session": "00", "case": f"100 bp, {n} steps", "hedger": name,
-                         "mean": st["mean"], "std": st["std"], "entropic": st["entropic"]})
+            rows.append(
+                {
+                    "session": "00",
+                    "case": f"100 bp, {n} steps",
+                    "hedger": name,
+                    "mean": st["mean"],
+                    "std": st["std"],
+                    "entropic": st["entropic"],
+                }
+            )
     return rows
 
 
@@ -150,18 +183,34 @@ def heston_figure(path: Path = DOCS / "01_heston_pnl.png") -> tuple[Path, list[d
     }
     stats = {k: summarise(v, setup.alpha, 1.0) for k, v in pnl.items()}
     premium = market.premium()
-    rows = [{"session": "01", "case": "Heston, 0 bp", "hedger": k, "mean": st["mean"],
-             "std": st["std"], "cvar": st["cvar"], "premium_plus_cvar": premium + st["cvar"]}
-            for k, st in stats.items()]
+    rows = [
+        {
+            "session": "01",
+            "case": "Heston, 0 bp",
+            "hedger": k,
+            "mean": st["mean"],
+            "std": st["std"],
+            "cvar": st["cvar"],
+            "premium_plus_cvar": premium + st["cvar"],
+        }
+        for k, st in stats.items()
+    ]
     rows.append({"session": "01", "case": "premium", "hedger": "", "mean": premium})
     colours = ["tab:blue", "tab:red", "0.5"]
     edges = np.linspace(-4, 2, 121)
     fig, ax = plt.subplots(figsize=(8.4, 5.0))
     for (name, x), colour in zip(pnl.items(), colours, strict=True):
         st = stats[name]
-        ax.hist(np.clip(x, edges[0], edges[-1]), bins=edges, density=True, histtype="stepfilled",
-                alpha=0.4, color=colour, edgecolor=colour,
-                label=f"{name}: std {st['std']:.2f}, CVaR {st['cvar']:.2f}")
+        ax.hist(
+            np.clip(x, edges[0], edges[-1]),
+            bins=edges,
+            density=True,
+            histtype="stepfilled",
+            alpha=0.4,
+            color=colour,
+            edgecolor=colour,
+            label=f"{name}: std {st['std']:.2f}, CVaR {st['cvar']:.2f}",
+        )
     ax.set_xlabel("terminal P&L of the short call (premium - payoff + trading gains)")
     ax.set_ylabel("density")
     ax.set_xlim(edges[0], edges[-1])
@@ -172,13 +221,17 @@ def heston_figure(path: Path = DOCS / "01_heston_pnl.png") -> tuple[Path, list[d
         f"In the Buehler et al. Heston market the network matches the model hedge\n"
         f"premium + CVaR {premium + network:.2f} against {premium + model:.2f}; "
         f"without the variance swap the spread is about four times wider",
-        loc="left", fontsize=10.5,
+        loc="left",
+        fontsize=10.5,
     )
-    bottom = _caption(fig, f"Simulated Heston: kappa = {setup.kappa:g}, theta = {setup.theta:g}, "
-             f"xi = {setup.xi:g}, rho = {setup.rho:g}, v0 = {setup.v0:g}; 30-day ATM call, "
-             f"premium {premium:.3f}, 30 rehedges, no cost. CVaR at {setup.alpha:.0%} "
-             f"(mean of the worst half of losses). {setup.m_eval:,} fresh paths, seed {SEED}; "
-             f"tails beyond [-4, 2] are piled into the end bins.")
+    bottom = _caption(
+        fig,
+        f"Simulated Heston: kappa = {setup.kappa:g}, theta = {setup.theta:g}, "
+        f"xi = {setup.xi:g}, rho = {setup.rho:g}, v0 = {setup.v0:g}; 30-day ATM call, "
+        f"premium {premium:.3f}, 30 rehedges, no cost. CVaR at {setup.alpha:.0%} "
+        f"(mean of the worst half of losses). {setup.m_eval:,} fresh paths, seed {SEED}; "
+        f"tails beyond [-4, 2] are piled into the end bins.",
+    )
     fig.tight_layout(rect=(0, bottom, 1, 1))
     fig.savefig(path, dpi=110)
     plt.close(fig)
@@ -198,8 +251,16 @@ def cost_models_figure(path: Path = DOCS / "02_cost_models.png") -> tuple[Path, 
         env = Environment(market, cost_model_from_spec(spec))
         for name, pos in (("delta", bench), ("network", rollout_paths(policy, sim))):
             st = summarise(env.pnl(sim, pos), spec["alpha"], spec["lam"])
-            rows.append({"session": "02", "case": spec["label"], "hedger": name,
-                         "mean": st["mean"], "std": st["std"], "entropic": st["entropic"]})
+            rows.append(
+                {
+                    "session": "02",
+                    "case": spec["label"],
+                    "hedger": name,
+                    "mean": st["mean"],
+                    "std": st["std"],
+                    "entropic": st["entropic"],
+                }
+            )
     labels = [COST_SESSION[k]["label"] for k in keys]
     d = [r["entropic"] for r in rows if r["hedger"] == "delta"]
     n = [r["entropic"] for r in rows if r["hedger"] == "network"]
@@ -215,13 +276,16 @@ def cost_models_figure(path: Path = DOCS / "02_cost_models.png") -> tuple[Path, 
     ax.legend(frameon=False, loc="upper left")
     ax.grid(axis="y", alpha=0.3)
     ax.set_title(
-        "The network beats delta under proportional and quadratic costs, not under a fixed "
-        "charge",
-        loc="left", fontsize=10.5,
+        "The network beats delta under proportional and quadratic costs, not under a fixed charge",
+        loc="left",
+        fontsize=10.5,
     )
-    bottom = _caption(fig, f"{BS_MARKET}, 30 daily rehedges, 20,000 fresh paths, seed {SEED}. The "
-             "fixed-charge network was trained on a smooth surrogate of the charge and is "
-             "scored on the exact charge, which it pays on almost every date.")
+    bottom = _caption(
+        fig,
+        f"{BS_MARKET}, 30 daily rehedges, 20,000 fresh paths, seed {SEED}. The "
+        "fixed-charge network was trained on a smooth surrogate of the charge and is "
+        "scored on the exact charge, which it pays on almost every date.",
+    )
     fig.tight_layout(rect=(0, bottom, 1, 1))
     fig.savefig(path, dpi=110)
     plt.close(fig)
@@ -245,14 +309,26 @@ def risk_vs_cost_figure(path: Path = DOCS / "03_risk_vs_cost.png") -> tuple[Path
         table = {k: [] for k in names}
         for cost in costs:
             policy, _ = load_ww_comparison_policy(n_steps, cost, "mlp")
-            scores, _ = score_hedgers(market, paths, cost, DEFAULT.lam, {"mlp": policy},
-                                      WW_FIXED_HALF_WIDTH[(n_steps, cost)])
+            scores, _ = score_hedgers(
+                market,
+                paths,
+                cost,
+                DEFAULT.lam,
+                {"mlp": policy},
+                WW_FIXED_HALF_WIDTH[(n_steps, cost)],
+            )
             for k in names:
                 table[k].append(scores[k]["entropic"])
-                rows.append({"session": "03", "case": f"{n_steps} steps, {cost * 1e4:g} bp",
-                             "hedger": k, "mean": scores[k]["mean"],
-                             "entropic": scores[k]["entropic"],
-                             "entropic_se": scores[k]["entropic_se"]})
+                rows.append(
+                    {
+                        "session": "03",
+                        "case": f"{n_steps} steps, {cost * 1e4:g} bp",
+                        "hedger": k,
+                        "mean": scores[k]["mean"],
+                        "entropic": scores[k]["entropic"],
+                        "entropic_se": scores[k]["entropic_se"],
+                    }
+                )
         bp = np.array(costs) * 1e4
         for k, (label, colour, marker) in names.items():
             ax.plot(bp, table[k], marker=marker, color=colour, label=label)
@@ -264,12 +340,17 @@ def risk_vs_cost_figure(path: Path = DOCS / "03_risk_vs_cost.png") -> tuple[Path
         ax.grid(alpha=0.3)
     axes[0].set_ylabel("entropic risk at lambda = 1 (lower is better)")
     axes[1].legend(frameon=False, fontsize=8.5, loc="upper left")
-    fig.suptitle("Every band beats delta once trading costs money; at 200 bp the network beats "
-                 "both bands", fontsize=11.5)
-    bottom = _caption(fig, f"{BS_MARKET}. Each point is one batch of {DEFAULT.m_eval:,} fresh "
-             f"paths, seed {SEED}, shared by every hedger; entropic standard errors are in "
-             "docs/results.csv. Networks trained on seed 0 at each cost (30 steps: the "
-             "session 00 networks).")
+    fig.suptitle(
+        "Every band beats delta once trading costs money; at 200 bp the network beats both bands",
+        fontsize=11.5,
+    )
+    bottom = _caption(
+        fig,
+        f"{BS_MARKET}. Each point is one batch of {DEFAULT.m_eval:,} fresh "
+        f"paths, seed {SEED}, shared by every hedger; entropic standard errors are in "
+        "docs/results.csv. Networks trained on seed 0 at each cost (30 steps: the "
+        "session 00 networks).",
+    )
     fig.tight_layout(rect=(0, bottom, 1, 0.97))
     fig.savefig(path, dpi=110)
     plt.close(fig)
@@ -277,14 +358,24 @@ def risk_vs_cost_figure(path: Path = DOCS / "03_risk_vs_cost.png") -> tuple[Path
 
 
 def write_results(rows: list[dict], path: Path = DOCS / "results.csv") -> Path:
-    fields = ["session", "case", "hedger", "mean", "std", "cvar", "premium_plus_cvar",
-              "entropic", "entropic_se"]
+    fields = [
+        "session",
+        "case",
+        "hedger",
+        "mean",
+        "std",
+        "cvar",
+        "premium_plus_cvar",
+        "entropic",
+        "entropic_se",
+    ]
     with path.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         for row in rows:
-            writer.writerow({k: (f"{v:.6f}" if isinstance(v, float) else v)
-                             for k, v in row.items()})
+            writer.writerow(
+                {k: (f"{v:.6f}" if isinstance(v, float) else v) for k, v in row.items()}
+            )
     return path
 
 

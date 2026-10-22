@@ -122,9 +122,7 @@ def train(
         for i in range(0, m, batch_size):
             batch = paths_tensor[order[i : i + batch_size]]
             positions = rollout(policy, batch, T)
-            pnl = pnl_from_positions_torch(
-                batch, positions, payoff_fn, cost, premium, exact=False
-            )
+            pnl = pnl_from_positions_torch(batch, positions, payoff_fn, cost, premium, exact=False)
             loss = risk_fn(pnl)
             optimiser.zero_grad()
             loss.backward()
@@ -180,8 +178,12 @@ def save_policy(policy: MLPPolicy, setup: Setup, path: Path, wall_time: float = 
     path.parent.mkdir(parents=True, exist_ok=True)
     state = {k: v.detach().clone() for k, v in policy.state_dict().items()}
     torch.save(
-        {"state_dict": state, "config": policy.config(), "setup": asdict(setup),
-         "wall_time": wall_time},
+        {
+            "state_dict": state,
+            "config": policy.config(),
+            "setup": asdict(setup),
+            "wall_time": wall_time,
+        },
         path,
     )
 

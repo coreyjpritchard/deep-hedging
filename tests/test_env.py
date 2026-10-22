@@ -57,9 +57,7 @@ def test_simulate_matches_bs_paths(impl):
 
 def test_premium_and_expiry_price(impl):
     mkt = market(impl, r=0.02)
-    np.testing.assert_allclose(
-        mkt.premium(), float(impl.bs_call_price(S0, K, T, SIGMA, 0.02))
-    )
+    np.testing.assert_allclose(mkt.premium(), float(impl.bs_call_price(S0, K, T, SIGMA, 0.02)))
     spot = np.array([80.0, 100.0, 120.0])
     np.testing.assert_allclose(mkt.price(spot, 0.0), [0.0, 0.0, 20.0])
     np.testing.assert_allclose(mkt.delta(spot, 0.0), [0.0, 0.0, 1.0])
@@ -217,6 +215,4 @@ def test_session_00_logged_risks_unchanged():
     assert delta.mean() == pytest.approx(-1.37, abs=0.005)
     # No hedge pays the call and nothing else. call_payoff is the torch/numpy one.
     flat = env.pnl(sim, np.zeros((setup.m_eval, setup.n_steps)))
-    np.testing.assert_allclose(
-        flat, setup.premium - call_payoff(setup.strike)(sim.spot[:, -1])
-    )
+    np.testing.assert_allclose(flat, setup.premium - call_payoff(setup.strike)(sim.spot[:, -1]))

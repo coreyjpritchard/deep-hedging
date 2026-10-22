@@ -66,22 +66,16 @@ def _as_positions(positions: np.ndarray, n_instruments: int) -> np.ndarray:
     pos = np.asarray(positions, dtype=float)
     if pos.ndim == 2:
         if n_instruments != 1:
-            raise ValueError(
-                f"positions have shape {pos.shape}; expected (m, n, {n_instruments})"
-            )
+            raise ValueError(f"positions have shape {pos.shape}; expected (m, n, {n_instruments})")
         return pos[:, :, None]
     if pos.ndim != 3 or pos.shape[-1] != n_instruments:
-        raise ValueError(
-            f"positions have shape {pos.shape}; expected (m, n, {n_instruments})"
-        )
+        raise ValueError(f"positions have shape {pos.shape}; expected (m, n, {n_instruments})")
     return pos
 
 
 def _check_alignment(prices: np.ndarray, pos: np.ndarray) -> None:
     if pos.shape[0] != prices.shape[0] or pos.shape[1] != prices.shape[1] - 1:
-        raise ValueError(
-            f"positions shape {pos.shape} does not match prices shape {prices.shape}"
-        )
+        raise ValueError(f"positions shape {pos.shape} does not match prices shape {prices.shape}")
 
 
 def traded_changes(positions: np.ndarray) -> np.ndarray:
@@ -274,9 +268,7 @@ class FixedPlusProportional:
         return proportional + (fixed * hits).sum(dim=(1, 2))
 
     def label(self) -> str:
-        return (
-            f"FixedPlusProportional(rate={self.rate}, fixed={self.fixed}, unit={self.unit})"
-        )
+        return f"FixedPlusProportional(rate={self.rate}, fixed={self.fixed}, unit={self.unit})"
 
 
 def torch_tanh(values):
@@ -308,9 +300,7 @@ class QuadraticCost:
         """Torch version of `amount`. `exact` is unused."""
         del exact
         traded = _torch_traded(positions)
-        impact = _torch_rates(
-            self.impact, prices.shape[-1], prices.dtype, prices.device, "impact"
-        )
+        impact = _torch_rates(self.impact, prices.shape[-1], prices.dtype, prices.device, "impact")
         basis = _torch_basis(prices, self.unit)
         return (impact * traded**2 * basis).sum(dim=(1, 2))
 

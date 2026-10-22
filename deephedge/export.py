@@ -74,9 +74,7 @@ def _check_shapes(time, names, instruments, positions, pnl) -> None:
     if len(names) != d:
         raise ValueError(f"{len(names)} instrument names for d = {d}")
     if positions.shape != (m, n_plus - 1, d):
-        raise ValueError(
-            f"positions have shape {positions.shape}, expected {(m, n_plus - 1, d)}"
-        )
+        raise ValueError(f"positions have shape {positions.shape}, expected {(m, n_plus - 1, d)}")
     if pnl.shape != (m,):
         raise ValueError(f"pnl has shape {pnl.shape}, expected {(m,)}")
 

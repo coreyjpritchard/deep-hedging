@@ -304,9 +304,7 @@ def rollout_paths(policy: nn.Module, paths) -> np.ndarray:
     return rollout_numpy(policy, features[:, :, 0], maturity)
 
 
-def position_grid(
-    policy: nn.Module, t: float, spots: np.ndarray, prevs: np.ndarray
-) -> np.ndarray:
+def position_grid(policy: nn.Module, t: float, spots: np.ndarray, prevs: np.ndarray) -> np.ndarray:
     """Position chosen at time t for every (previous position, spot) pair.
 
     Returns shape (len(prevs), len(spots)).
