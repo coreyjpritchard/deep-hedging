@@ -1,13 +1,9 @@
-# deep-hedging: plan for the hedging lab
+# deep-hedging: roadmap for the hedging lab
 
-Status: planning document, no code. Written on branch `plan/fable-v1` on 21 October 2026.
-Detailed module cards, interface signatures, the maths and the regime experiment are in
-`docs/plan/`. This file is the summary and the decisions; the owner's answers to the planning
-questions are recorded in section 10 (decisions, owner, 2026-10-21).
-
-Note on tooling: Fable (the planning model used to write this document) is disabled for
-this repository once this PR merges. Cursor cloud agents build the modules, Claude Opus
-reviews, Grok Bot orchestrates.
+Status: my roadmap for the next stage of this repository, written on 21 October 2026.
+Most of it is not built yet. Detailed module cards, interface signatures, the maths and
+the regime experiment are in `docs/plan/`. This file is the summary and the decisions;
+my answers to the open design questions are in section 10.
 
 ## 1. What the repository becomes
 
@@ -28,13 +24,13 @@ graph spec.
 **Recommendation: option C.** A typed JSON graph spec (`deephedge.graph/v1`) is the
 single source of truth; a Python engine compiles and runs it; the first UI is marimo
 (extending the PR 4 playground); a React Flow web canvas over a FastAPI job runner is a
-later, optional module that reads and writes the same spec. Owner decision (D1): marimo
+later, optional module that reads and writes the same spec. Decision (D1): marimo
 stays the first UI, and M20 is deferred until M10 (the evaluator) has landed; it is then
 reconsidered only if the marimo lab feels limiting.
 
 Why not A alone (extend marimo): marimo has no node canvas, and PR 4 already found that a
 true drag-and-drop board means a JavaScript widget. Marimo is right for the first year
-(the author can read every line, it runs on the modest server, `marimo export html`
+(I can read every line, it runs on the modest server, `marimo export html`
 gives a static demo) but it would couple the lab to one UI if the engine were written
 around it.
 
@@ -167,32 +163,32 @@ The shared, typed interface (details in `docs/plan/01-interfaces.md`):
 
 ## 5. Module breakdown
 
-Twenty modules. Each is one Cursor agent PR; cards with inputs, outputs, interfaces,
+Twenty modules. Each is one PR; cards with inputs, outputs, interfaces,
 tests and acceptance criteria are in `docs/plan/02-modules.md`.
 
-| # | Module | Depends on | Builder | Reviewer |
-|---|---|---|---|---|
-| M00 | Merge PR 1 after review, rebase and merge PR 2, rebase and merge PR 3 | none | owner + Cursor rebases | Opus |
-| M01 | Graph spec and registry (`deephedge/spec.py`, `registry.py`) | M00 | Cursor | Opus (design) |
-| M02 | Generator and Pricer protocols; split `Market`; Monte Carlo fallbacks | M01 | Cursor | Opus (design) |
-| M03 | Contract blocks (`deephedge/contracts.py`) | M02 | Cursor | Opus |
-| M04 | Cost blocks hardened (discounting, per-instrument, surrogate widths in spec) | M01 | Cursor | script tests |
-| M05 | Policy protocol with state; FeatureMLP, GRU, per-step nets; one rollout | M01 | Cursor | Opus (design) |
-| M06 | Feature blocks (`deephedge/features.py`) | M02, M05 | Cursor | Opus |
-| M07 | Objective blocks (`deephedge/objectives.py`) | M01 | Cursor | Opus |
-| M08 | Classical hedgers as policies (`deephedge/classical.py`) | M02, M05 | Cursor | Opus |
-| M09 | Engine: compile, train, run store (`deephedge/engine.py`, `runs/`) | M01 to M08 | Cursor | Opus (design) |
-| M10 | Evaluator: side-by-side report, paired bootstrap, cross-environment matrix | M09 | Cursor | Opus |
-| M11 | Generators: rough Bergomi (roughvol) and SABR | M02 | Cursor | script tests |
-| M12 | Generators: regime-switching Bergomi (volsurface) with regime features and variance-swap instrument | M02, M06 | Cursor | Opus |
-| M13 | Generators: local vol from a surface, and the calibrated SPX surface route | M02 | Cursor | Opus |
-| M14 | Generators: uploads (paths CSV, block bootstrap, user `.py`), from PR 4 | M02 | Cursor | script tests |
-| M15 | Marimo lab app, from PR 4 (`lab/app.py`) | M09, M10 | Cursor | owner |
-| M16 | Live one-path view, from PR 5 (`lab/live.py`) | M09 | Cursor | owner |
-| M17 | Sessions 00 to 03 reproduced on the engine; weights regenerated; docs | M09, M10 | Cursor | script (regression tests) |
-| M18 | Pre-registered regime experiment runner (`experiments/regime/`) | M10, M12 | Cursor | Opus (gate logic) |
-| M19 | Paper SPX hedger from daily IBKR snapshots (no orders) | M13, M09 | Cursor | Opus |
-| M20 | Web canvas (React Flow + FastAPI), deferred (D1): reconsidered after M10 lands | M09, M10 | Cursor | owner |
+| # | Module | Depends on |
+|---|---|---|
+| M00 | Merge PR 1 after review, rebase and merge PR 2, rebase and merge PR 3 | none |
+| M01 | Graph spec and registry (`deephedge/spec.py`, `registry.py`) | M00 |
+| M02 | Generator and Pricer protocols; split `Market`; Monte Carlo fallbacks | M01 |
+| M03 | Contract blocks (`deephedge/contracts.py`) | M02 |
+| M04 | Cost blocks hardened (discounting, per-instrument, surrogate widths in spec) | M01 |
+| M05 | Policy protocol with state; FeatureMLP, GRU, per-step nets; one rollout | M01 |
+| M06 | Feature blocks (`deephedge/features.py`) | M02, M05 |
+| M07 | Objective blocks (`deephedge/objectives.py`) | M01 |
+| M08 | Classical hedgers as policies (`deephedge/classical.py`) | M02, M05 |
+| M09 | Engine: compile, train, run store (`deephedge/engine.py`, `runs/`) | M01 to M08 |
+| M10 | Evaluator: side-by-side report, paired bootstrap, cross-environment matrix | M09 |
+| M11 | Generators: rough Bergomi (roughvol) and SABR | M02 |
+| M12 | Generators: regime-switching Bergomi (volsurface) with regime features and variance-swap instrument | M02, M06 |
+| M13 | Generators: local vol from a surface, and the calibrated SPX surface route | M02 |
+| M14 | Generators: uploads (paths CSV, block bootstrap, user `.py`), from PR 4 | M02 |
+| M15 | Marimo lab app, from PR 4 (`lab/app.py`) | M09, M10 |
+| M16 | Live one-path view, from PR 5 (`lab/live.py`) | M09 |
+| M17 | Sessions 00 to 03 reproduced on the engine; weights regenerated; docs | M09, M10 |
+| M18 | Pre-registered regime experiment runner (`experiments/regime/`) | M10, M12 |
+| M19 | Paper SPX hedger from daily IBKR snapshots (no orders) | M13, M09 |
+| M20 | Web canvas (React Flow + FastAPI), deferred (D1): reconsidered after M10 lands | M09, M10 |
 
 Module count: 21 entries including M00; 20 build modules.
 
@@ -215,7 +211,7 @@ M00
                                                 +-- M20
 ```
 
-Waves (max three Cursor agents at once, so reviews keep up):
+Waves (at most three modules in flight at once, so reviews keep up):
 
 1. M00, then M01 alone (everything imports it).
 2. M02, M04, M05, M07 in parallel (four, but M04 and M07 are small).
@@ -223,7 +219,7 @@ Waves (max three Cursor agents at once, so reviews keep up):
 4. M09 alone (integration), then M10.
 5. M12, M13, M15, M17 in parallel.
 6. M16, M18, M19.
-7. M20 is deferred (D1). Once M10 has landed, the owner decides whether the marimo lab
+7. M20 is deferred (D1). Once M10 has landed, I decide whether the marimo lab
    feels limiting; only then does M20 start, and only on a spec that has been stable for a
    month.
 
@@ -244,22 +240,14 @@ open M01. #4 and #5 stay open as drafts until M14 to M16 absorb them (D2). Do no
 #4 or #5 onto main: their engine code would be rewritten within
 weeks and their weights and PNGs add 20 binary files.
 
-## 7. Model and tool assignment, with a token-cost note
+## 7. Checks
 
-- **Cursor cloud agents** build every module from M01 onward. Each brief is the module
-  card from `docs/plan/02-modules.md` plus the interface file. Cost: outside the Claude
-  allowance.
-- **Claude Opus** reviews the design modules (M01, M02, M05, M09) before the first commit
-  and reviews every PR diff. Rough cost per review: 60k to 150k input tokens for a
-  2,000-line diff plus a few thousand output. Twenty modules, say 25 reviews, roughly
-  2.5M input tokens over the project. Keep reviews to the diff and the module card; do
-  not have Opus read the whole repository each time.
-- **Plain scripts** (no model) regenerate weights, figures and the regression tables
-  (M17), run `ruff` and `pytest`, and run the regime experiment (M18). A CI job on each
-  PR runs `pytest -m "not slow"`; the slow suite runs nightly or on demand.
-- **Sonnet-class workers** are enough for diff summaries, changelog entries and
-  formatting; never use Opus for those.
-- **Fable** wrote this plan and is disabled for this repository after it merges.
+- Plain scripts regenerate weights, figures and the regression tables (M17), run `ruff`
+  and `pytest`, and run the regime experiment (M18).
+- A CI job on each PR runs `pytest -m "not slow"`; the slow suite runs nightly or on
+  demand.
+- Each design module (M01, M02, M05, M09) is reviewed before its first commit, and every
+  PR diff is reviewed against its module card.
 
 ## 8. The pre-registered regime experiment on this engine
 
@@ -315,9 +303,9 @@ Full mapping in `docs/plan/04-regime-experiment.md`. In short:
 - **SPX paper hedger.** The daily IBKR snapshot job stays outside this repository (D8);
   M19 only reads recorded snapshots, is last, and must never place an order.
 
-## 10. Decisions (owner, 2026-10-21)
+## 10. Decisions (21 October 2026)
 
-The planning questions were answered by the owner on 21 October 2026. Each answer is a
+I settled the open planning questions on 21 October 2026. Each answer is a
 decision, cited as D1 to D10 where the plan depends on it.
 
 1. **D1 UI.** Marimo stays the first UI. M20 (React Flow plus FastAPI canvas) is deferred
@@ -330,7 +318,7 @@ decision, cited as D1 to D10 where the plan depends on it.
 4. **D4 Regime experiment input.** The engine accepts volsurface's `MarketPaths` directly
    (pass-through in `Paths.source`), keeping the surface batches for H3.
 5. **D5 Hurst preset.** The rough Bergomi default preset is `H = 0.1`, matching the
-   PREREG, exposed as an adjustable parameter. The empirical reference is the author's
+   PREREG, exposed as an adjustable parameter. The empirical reference is my
    own estimates in the rough-volatility repo: H about 0.148 on Oxford-Man rv5 (SE about
    0.013) and about 0.167 on SPX (0.115 to 0.207 across windows). An earlier draft of
    this plan said 0.07 was closer to realised-variance estimates; that was wrong. The

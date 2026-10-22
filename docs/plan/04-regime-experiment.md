@@ -22,7 +22,7 @@ simulate_market(n_paths, times, seed=run_seed(entropy, split), store_forward=Tru
 The adapter maps `MarketPaths` to the engine's `Paths`: `instruments[:, :, 0] = F0 * Z`,
 `features` as the feature blocks request, `state = {"variance": v, "regime": regime,
 "regime_prob": regime_prob (chosen filter), "regime_prob_spot", "regime_prob_rv",
-"regime_prob_latent", "xi", "xi_tenor", "realised_variance"}`. Owner decision D4: the
+"regime_prob_latent", "xi", "xi_tenor", "realised_variance"}`. Decision D4: the
 engine accepts volsurface's `MarketPaths` directly. The generator passes the object
 through unchanged in `Paths.source`; the arrays above are views of it, nothing is
 dropped, and the surface batches stay available for H3.

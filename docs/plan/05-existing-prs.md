@@ -28,7 +28,7 @@ Debts it carries, to be paid in M02 and M05 rather than blocking the merge:
 - `Heston` is a plain class while `BlackScholes` is a frozen dataclass. M02 makes both
   frozen with `params()`.
 
-Review focus for Opus: the Heston full-truncation scheme with Feller violated
+Review focus: the Heston full-truncation scheme with Feller violated
 (`2 kappa theta = 0.08 < xi^2 = 4`), the variance-swap mark using pricing `kappa, theta`
 when `kappa_sim` differs, and the 0.05 gap to the paper's 1.94 indifference price (PR
 body attributes it to exact CIR versus truncation on 30 dates; worth one check at 480
@@ -70,7 +70,7 @@ full. The loss against delta is a mismatch between training and evaluation, not 
 that a fixed charge rewards no band. The PR text was corrected before merge; M05 adds a
 policy with an explicit no-trade output and M04 a surrogate-width study.
 
-The export schema is a reasonable per-run P&L artefact. Owner decision D3: it is not
+The export schema is a reasonable per-run P&L artefact. Decision D3: it is not
 frozen, and M09 may replace it with its own run-store layout.
 
 ## PR 3: Whalley-Wilmott band against the learned hedge (1,821 additions)
@@ -126,7 +126,7 @@ uploads (the PR body says so). The static HTML export is a good idea and M15 kee
 The PR's own argument against a JavaScript drag-and-drop board (the author should be able
 to read every part) is the argument for option C in PLAN.md.
 
-Decided handling (owner, D2): the PR stays open as a draft until M14 and M15 have
+Decided handling (D2): the PR stays open as a draft until M14 and M15 have
 absorbed it; only then close it, with a LOG.md line crediting the upload contract and the
 GRU policy.
 
@@ -149,14 +149,14 @@ positions.
 and `tests/test_learn_band.py`, which are not in the diff. It can merge now as a
 docs-only PR if those references are marked as planned; it does not depend on the engine.
 
-Decided handling (owner, D2): #5 stays open as a draft until M16 has absorbed it; only
+Decided handling (D2): #5 stays open as a draft until M16 has absorbed it; only
 then close it, with the same LOG.md credit. A small docs PR for `LEARN.md` remains an
 option but does not close #5. The PNGs should not land on `main`; M16
 regenerates one screenshot by script.
 
 ## Merge sequence
 
-1. Review #1 (Opus), rebase on `main`, merge.
+1. Review #1, rebase on `main`, merge.
 2. Rebase #2 on `main`, run the suite, merge.
 3. Rebase #3 on `main`, run the suite, merge.
 4. Open M01. From here every change is a module PR against the plan.

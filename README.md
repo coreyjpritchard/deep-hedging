@@ -160,6 +160,6 @@ on four cores.
   Heston network, a delta policy, and rollouts.
 - `deephedge/train.py` end-to-end training and the cached settings of sessions 00, 01 and 02.
 - `tests/` checks against closed forms and known rates; `pytest --impl=exercises` runs
-  them against Corey's own implementations in `exercises/`.
+  them against the from-scratch implementations in `exercises/`.
 
 MIT licence.

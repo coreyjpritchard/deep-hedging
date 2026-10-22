@@ -5,7 +5,7 @@ Dated entries, newest first. What was learned, what surprised, open questions.
 **Current state.** Sessions 00, 01, 02 and 03 are built. Black-Scholes and Heston
 sit on the environment, costs are pluggable, and the Whalley-Wilmott band is
 compared with the learned hedge on Black-Scholes in `sessions/03_whalley_wilmott.py`.
-That file is roadmap item 02. The box stays open until Corey works through it.
+That file is roadmap item 02. The box stays open until the session has been worked through.
 File `sessions/02_cost_models.py` is the cost-model picture, not that question.
 **Next:** the same four hedgers under Heston, then under rough Bergomi with `roughvol`.
 
