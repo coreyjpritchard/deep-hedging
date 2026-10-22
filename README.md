@@ -10,9 +10,26 @@ measure of the hedged P&L of a short call, as in Buehler, Gonon, Teichmann and W
 and compared with delta hedging and with no-trade bands. The aim is deep hedging under
 rough volatility; the markets so far are Black-Scholes and Heston.
 
-![Positions held at day 15: on delta without costs, a band around it with costs](docs/00_no_trade_band.png)
+![Two panels of the network's position against spot on day 15 of a 30-day short call. Without costs the dots and three response lines lie on Black-Scholes delta; at 50 bp the response lines fan out and the dots form a band around a curve flatter than delta](docs/00_no_trade_band.png)
 
-![Entropic risk against proportional cost for delta, the two bands and the network](docs/03_risk_vs_cost.png)
+**How to read this.** Each dot is the network's holding after the day-15 rehedge on one
+simulated Black-Scholes path, against that day's spot; the blue curve is Black-Scholes delta,
+and the three black lines are the position the network chooses if it comes into day 15
+holding 0.2, 0.5 or 0.8 shares. Without costs the three lines sit on delta: rebalancing is
+free, so the current holding is irrelevant and the network reproduces delta (within 0.01 near
+the money). With a 50 bp proportional cost every trade costs money, so the optimal policy has a
+no-trade region around delta, where carrying a small hedging error is cheaper than paying to
+remove it (Whalley and Wilmott 1997). The network learns this from the P&L alone: the lines
+separate, so its new position depends on its current holding and it moves only partway
+towards delta (at the money, moving the incoming position from 0.2 to 0.8 moves the new
+position by 0.66 of that gap), and the cloud of holdings becomes a band. Time, moneyness and
+current holding are enough inputs because entropic risk is time consistent, so in this
+market the optimal hedge depends only on (t, S, position).
+
+**Caveat.** The band is soft: inside it the network still trades part of the way, where a
+sharp band would not trade at all, and its centre sits slightly above delta. A sharp
+constant-width band scores almost the same (session 03), so this shows a band-like policy,
+not the exact optimal band.
 
 ## Results
 
@@ -26,18 +43,53 @@ going from 10 to 120 rehedges takes delta's mean P&L from -1.96 to -4.48, close 
 square-root-of-n law; the network trained at 30 steps goes from -1.26 to -1.89, and its
 standard deviation falls from 1.15 to 0.63, because inside its band it does not trade.
 
-**Session 01, Heston, no cost** ([figure](docs/01_heston_pnl.png)). In the Heston market
-of Buehler et al. (2019), section 5.2, with a variance swap as the second instrument, the
-network matches the model hedge but does not beat it: premium plus CVaR at 50% is 2.00
+**Session 01, Heston, no cost.** In the Heston market of Buehler et al. (2019), section
+5.2, with a variance swap as the second instrument, the network matches the model hedge but does not beat it: premium plus CVaR at 50% is 2.00
 against 1.99 (the paper prints 1.94). The model hedge has P&L standard deviation 0.40,
 the network 0.44, and delta in the spot alone 1.56.
 
-**Session 02, other cost models** ([figure](docs/02_cost_models.png)). Under a quadratic
-impact of 0.02 the network's entropic risk is 0.94 against 2.46 for delta. Under a fixed
+![Histograms of terminal P&L of a short call in Heston at zero cost: the model hedge and the network, both trading a variance swap, overlap in a narrow peak at zero; delta in the spot alone is about four times wider, with a long left tail clipped into a bar at -4](docs/01_heston_pnl.png)
+
+**How to read this.** Terminal P&L (premium minus payoff plus trading gains) of a 30-day
+at-the-money call sold at the Heston price of 1.692 and rehedged 30 times at zero cost, on
+20,000 paths of the Buehler et al. (2019) Heston market. Variance has its own Brownian driver,
+so the spot alone cannot hedge volatility risk and the market is incomplete: the grey
+spot-only delta hedge stays exposed to realised variance, typically ending ahead but losing
+heavily when variance spikes (standard deviation 1.56). A variance swap as a second instrument
+hedges that second risk factor and, in continuous time, completes the market, which is why
+the blue model hedge collapses to standard deviation 0.40 and CVaR 0.30. The red network,
+trained only on simulated P&L to minimise 50% CVaR and never given the Heston formulas or
+Greeks, lands almost on top of it. Premium plus CVaR is the indifference price under that
+risk measure, the smallest premium at which the hedged book carries no risk: 2.00 for the
+network against 1.99 for the model hedge (Buehler et al. 2019).
+
+**Caveat.** The bar at -4 is not a second mode: spot-only P&L below -4 is clipped into the end
+bin, so that tail is longer than it looks. The network does not beat the model hedge, and both
+sit above the paper's 1.94 because variance is simulated on the coarse 30-step grid; on a finer
+variance grid the model hedge scores 1.934 ([LOG.md](LOG.md)).
+
+**Session 02, other cost models.** Under a quadratic impact of 0.02 the network's entropic risk is 0.94 against 2.46 for delta. Under a fixed
 charge of 0.05 per trade it is worse than delta, 1.79 against 1.61 (see Limits).
 
-**Session 03, against the Whalley-Wilmott band** ([figure](docs/03_risk_vs_cost.png)).
-Entropic risk on the same 20,000 paths:
+![Bar chart of entropic risk for Black-Scholes delta and a network trained for each cost: proportional 50 bp, 1.54 against 1.05; quadratic impact 0.02, 2.46 against 0.94; fixed 0.05 per trade, 1.61 against 1.79](docs/02_cost_models.png)
+
+**How to read this.** Entropic risk at lambda = 1 (lower is better) for Black-Scholes delta
+and for a network trained under each cost model, on the same 20,000 Black-Scholes paths with
+30 daily rehedges. Proportional and quadratic costs grow continuously with trade size, so
+training gets a usable gradient that says "trade less": the network learns to carry its
+holding over (at the money, moving the incoming position from 0.2 to 0.8 moves the new
+position by 0.66 of that gap at 50 bp and 0.57 under quadratic impact, against 0.01 with no
+cost) and beats delta, by most under quadratic impact, which punishes large rebalancing trades
+hardest. A fixed charge per trade is an indicator with no gradient, so it is trained on a
+smooth surrogate, tanh(|trade| / 0.05), that charges almost nothing for a tiny trade. Scored
+on the exact charge, each of the network's small adjustments pays the full 0.05: its position
+changes on 97% of trade slots, close to delta's 99.9%, and it loses to delta.
+
+**Caveat.** This is a failure of the training set-up, not evidence that a fixed charge rewards
+no band: a smooth surrogate and a policy that never outputs an exact zero trade are the wrong
+pair. The planned fix, a policy with an explicit no-trade output, is not built yet.
+
+**Session 03, against the Whalley-Wilmott band.** Entropic risk on the same 20,000 paths:
 
 | Rehedges, cost | Delta | Whalley-Wilmott band | Constant band (tuned) | Network |
 |---|---|---|---|---|
@@ -51,6 +103,27 @@ constant-width band scores almost as high, so this does not show a gamma-shaped 
 At the money its cloud of holdings is 0.54 of the analytic half-width. Its width scales
 like cost^0.293 at 120 steps (5 to 25 bp; bootstrap SE 0.007) against the analytic 1/3,
 and like cost^0.063 at 30 steps (25 to 200 bp): discrete rehedging flattens it.
+
+![Two panels of entropic risk against proportional cost on a log axis, 120 rehedges at 5 to 25 bp and 30 rehedges at 25 to 200 bp. Delta rises steeply; the Whalley-Wilmott band, a tuned constant-width band and the network lie close together, and at 100 and 200 bp the network is lowest](docs/03_risk_vs_cost.png)
+
+**How to read this.** Entropic risk (lower is better) against proportional cost, on a log
+axis, for four hedgers scored on one shared batch of 20,000 Black-Scholes paths: 120 rehedges
+at 5 to 25 bp on the left, 30 rehedges at 25 to 200 bp on the right. Delta trades at every
+date by amounts that do not depend on the cost, so its expected cost bill is proportional to
+the rate and its risk climbs fastest (0.244 to 1.205 from 5 to 25 bp at 120 rehedges). The
+bands trade only when the position drifts outside them, so they pay far less; at 5 to 25 bp
+with 120 rehedges the Whalley-Wilmott band, the constant-width band (tuned on another seed)
+and the network sit within 0.01 to 0.02 of each other, the two bands tied and the network a
+few standard errors behind. The Whalley-Wilmott width is an asymptotic result for small costs and continuous
+rehedging (Whalley and Wilmott 1997), so on the coarse 30-date grid at 100 and 200 bp it is no
+longer optimal: it is too wide (half-width 0.31 against a tuned 0.16 at 200 bp) and stays
+centred on delta, while the network moves its centre up by about 0.10 and wins, 3.35 against
+4.37.
+
+**Caveat.** Each network is trained on one seed, and the engine charges liquidation at
+maturity, which the continuous-time band was not built for. Up to 50 bp a tuned
+constant-width band matches or beats the network, so the figure does not show that the
+network has learned the gamma-shaped width of the theory.
 
 ## What is in the repository
 
