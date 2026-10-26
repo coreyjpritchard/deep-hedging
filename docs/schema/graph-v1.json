@@ -331,6 +331,18 @@
                     "type": "number",
                     "exclusiveMinimum": 0.0
                   },
+                  "kappa_sim": {
+                    "oneOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0.0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "simulation kappa; unset means kappa"
+                  },
                   "maturity": {
                     "type": "number",
                     "exclusiveMinimum": 0.0,
@@ -339,6 +351,11 @@
                   "mu": {
                     "type": "number",
                     "description": "drift of the simulation measure"
+                  },
+                  "n_cos": {
+                    "type": "integer",
+                    "minimum": 16,
+                    "description": "COS terms along a path"
                   },
                   "r": {
                     "type": "number",
@@ -356,7 +373,24 @@
                   },
                   "theta": {
                     "type": "number",
-                    "exclusiveMinimum": 0.0
+                    "minimum": 0.0
+                  },
+                  "theta_sim": {
+                    "oneOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0.0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "simulation theta; unset means theta"
+                  },
+                  "truncation": {
+                    "type": "number",
+                    "exclusiveMinimum": 0.0,
+                    "description": "COS range in standard deviations"
                   },
                   "v0": {
                     "type": "number",
@@ -364,7 +398,8 @@
                   },
                   "xi": {
                     "type": "number",
-                    "exclusiveMinimum": 0.0
+                    "minimum": 0.0,
+                    "description": "vol of vol; 0 is the Black-Scholes limit"
                   }
                 },
                 "additionalProperties": false

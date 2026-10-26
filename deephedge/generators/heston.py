@@ -57,25 +57,40 @@ paper. `dP/dv` is `exp(-r (T - t)) * dL/dv`.
 `xi = 0` is not a limit of that formula (it divides by `xi^2`). The
 variance is then deterministic, the log spot is Gaussian with variance
 `L`, and the call is the Black-Scholes price with that total variance.
+
+
+Generator interface (M02). `Heston` is a frozen generator named `"heston"`
+with one state, `"variance"` (the truncated `max(v, 0)`, the same column as
+feature 1). `params()` is what the graph spec stores, without the strike,
+which belongs to the contract. `pricer()` returns a `HestonPricer`, the COS
+and quadrature prices for a vanilla call or put. `simulate_from` restarts the
+Euler scheme from given spots and variances under the pricing measure, for
+`deephedge.pricing.MonteCarloPricer`.
 """
 
 from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import ClassVar
 
 import numpy as np
 from scipy.integrate import quad
 from scipy.stats import norm
 
-from deephedge.env import (
-    Market,
-    Paths,
-    _check_maturity,
-    bs_call_delta,
-    bs_call_price,
-    call_on_spot,
-)
+from deephedge.generators.base import Market, call_on_spot
+from deephedge.generators.base import check_maturity as _check_maturity
 from deephedge.markets import time_grid
+from deephedge.paths import Paths
+from deephedge.pricing import PriceResult, bs_call_delta, bs_call_price
 
-__all__ = ["Heston", "d_variance_swap_dv", "variance_swap_leg"]
+__all__ = [
+    "Heston",
+    "HestonPricer",
+    "cos_call_greeks",
+    "d_variance_swap_dv",
+    "heston_call_quad",
+    "variance_swap_leg",
+]
 
 
 def d_variance_swap_dv(tau, kappa: float):
@@ -351,7 +366,13 @@ class Heston(Market):
     `benchmark_positions`. The premium is the quadrature price, not the
     COS price. On the 2019 parameters with `n_cos = 128` the two differ
     by about `5e-5` at inception.
+
+    The strike is kept for the deprecated `Market` interface. The generator
+    parameters, `params()`, leave it out.
     """
+
+    name: ClassVar[str] = "heston"
+    state_names: ClassVar[tuple[str, ...]] = ("variance",)
 
     def __init__(
         self,
@@ -430,32 +451,73 @@ class Heston(Market):
         z = np.asarray(shocks, dtype=float)
         if z.ndim != 3 or z.shape[-1] != 2:
             raise ValueError(f"shocks must have shape (m, n, 2), got {z.shape}")
+        m = z.shape[0]
+        return self._euler(
+            np.full(m, self.s0),
+            np.full(m, self.v0),
+            z,
+            self.maturity,
+            self.mu,
+            self._kappa_sim(),
+            self._theta_sim(),
+        )
+
+    def simulate_from(
+        self, start: Mapping[str, np.ndarray], tau: float, n: int, n_inner: int, seed: int
+    ) -> Paths:
+        """Restart the scheme from `start["spot"]` and `start["variance"]`, each `(p,)`.
+
+        Draws `n_inner` paths per start on `n` steps over `[0, tau]`, under the
+        pricing measure (drift `r`, pricing `kappa` and `theta`). One draw
+        `default_rng(seed).standard_normal((p * n_inner, n, 2))`, outer path
+        major. The variance swap column is the swap over the remaining
+        `[0, tau]` only: the variance realised before the restart is not
+        known here. It is meant for pricing contracts on the spot.
+        """
+        spot0 = np.asarray(start["spot"], dtype=float).reshape(-1)
+        var0 = np.asarray(start["variance"], dtype=float).reshape(-1)
+        if spot0.shape != var0.shape:
+            raise ValueError("start spot and variance must have the same shape")
+        if tau <= 0 or n < 1 or n_inner < 1:
+            raise ValueError("tau must be positive and n, n_inner at least 1")
+        rng = np.random.default_rng(seed)
+        z = rng.standard_normal((spot0.size * n_inner, n, 2))
+        return self._euler(
+            np.repeat(spot0, n_inner),
+            np.repeat(np.maximum(var0, 0.0), n_inner),
+            z,
+            float(tau),
+            self.r,
+            self.kappa,
+            self.theta,
+        )
+
+    def _euler(self, s0, v0, z, horizon, drift, kappa_s, theta_s) -> Paths:
+        """Full truncation Euler from spots `s0 (m,)` and variances `v0 (m,)` over `horizon`."""
         m, n, _ = z.shape
-        dt = self.maturity / n
-        time = time_grid(n, self.maturity)
-        kappa_s = self._kappa_sim()
-        theta_s = self._theta_sim()
+        dt = horizon / n
+        time = time_grid(n, horizon)
         log_s = np.empty((m, n + 1))
-        log_s[:, 0] = np.log(self.s0)
-        latent = np.full(m, self.v0)
+        log_s[:, 0] = np.log(s0)
+        latent = np.array(v0, dtype=float)
         variance = np.empty((m, n + 1))
-        variance[:, 0] = self.v0
+        variance[:, 0] = v0
         realised = np.zeros(m)
         swap = np.empty((m, n + 1))
-        swap[:, 0] = self._swap_price(0.0, self.v0, self.maturity)
+        swap[:, 0] = self._swap_price(0.0, v0, horizon)
         orthogonal = float(np.sqrt(max(0.0, 1.0 - self.rho**2)))
         for k in range(n):
             vp = np.maximum(latent, 0.0)
             z_var = z[:, k, 0]
             z_spot = self.rho * z_var + orthogonal * z[:, k, 1]
-            log_s[:, k + 1] = log_s[:, k] + (self.mu - 0.5 * vp) * dt + np.sqrt(vp * dt) * z_spot
+            log_s[:, k + 1] = log_s[:, k] + (drift - 0.5 * vp) * dt + np.sqrt(vp * dt) * z_spot
             latent = latent + kappa_s * (theta_s - vp) * dt + self.xi * np.sqrt(vp * dt) * z_var
             variance[:, k + 1] = np.maximum(latent, 0.0)
             realised = realised + vp * dt
-            tau = self.maturity - time[k + 1]
-            swap[:, k + 1] = self._swap_price(realised, variance[:, k + 1], tau)
+            left = horizon - time[k + 1]
+            swap[:, k + 1] = self._swap_price(realised, variance[:, k + 1], left)
         spot = np.empty_like(log_s)
-        spot[:, 0] = self.s0
+        spot[:, 0] = s0
         spot[:, 1:] = np.exp(log_s[:, 1:])
         instruments = np.empty((m, n + 1, 2))
         instruments[:, :, 0] = spot
@@ -468,7 +530,31 @@ class Heston(Market):
             instruments=instruments,
             features=features,
             discount=np.exp(-self.r * time),
+            state={"variance": variance},
+            instrument_names=self.instrument_names,
+            feature_names=self.feature_names,
         )
+
+    def params(self) -> dict:
+        """Generator parameters for the graph spec. The strike is the contract's."""
+        return {
+            "s0": self.s0,
+            "maturity": self.maturity,
+            "r": self.r,
+            "mu": self.mu,
+            "kappa": self.kappa,
+            "theta": self.theta,
+            "xi": self.xi,
+            "rho": self.rho,
+            "v0": self.v0,
+            "kappa_sim": self.kappa_sim,
+            "theta_sim": self.theta_sim,
+            "n_cos": self.n_cos,
+            "truncation": self.truncation,
+        }
+
+    def pricer(self) -> HestonPricer:
+        return HestonPricer(self)
 
     def _swap_price(self, realised, variance, tau):
         """Time-t price of the strike-0 variance swap, in time-t money."""
@@ -480,8 +566,11 @@ class Heston(Market):
     def payoff(self, paths: Paths) -> np.ndarray:
         return call_on_spot(paths.instruments, self.strike)
 
-    def greeks(self, spot, variance, tau):
-        """Call price, delta and vega. Vectorised. COS, or Black-Scholes if `xi = 0`."""
+    def greeks(self, spot, variance, tau, strike: float | None = None):
+        """Call price, delta and vega. Vectorised. COS, or Black-Scholes if `xi = 0`.
+
+        `strike` defaults to the market's strike.
+        """
         spot = np.asarray(spot, dtype=float)
         variance = np.asarray(variance, dtype=float)
         tau = np.asarray(tau, dtype=float)
@@ -490,7 +579,7 @@ class Heston(Market):
             np.broadcast_to(spot, shape),
             np.broadcast_to(variance, shape),
             np.broadcast_to(tau, shape),
-            self.strike,
+            self.strike if strike is None else float(strike),
             self.kappa,
             self.theta,
             self.xi,
@@ -565,3 +654,93 @@ class Heston(Market):
             self.rho,
             self.r,
         )
+
+
+class HestonPricer:
+    """Closed-form prices for a vanilla call or put on a `Heston` generator.
+
+    The premium is the quadrature price. Along a path the price, delta and
+    vega are COS (`n_cos`, `truncation` from the generator); a put comes from
+    put-call parity. Greeks per instrument, shape `(m, n + 1, 2)`:
+
+    * `"delta"`: column 0 is the COS delta at fixed variance, column 1 the
+      variance-swap weight `vega / (dP/dv)`, the hedge of equation (5.6) in
+      Buehler et al. (2019). Rows `0..n-1` equal `Heston.benchmark_positions`;
+      at maturity the spot column is the indicator and the swap column 0.
+    * `"gamma"`: column 0 is a central difference of the COS delta in the
+      spot (relative bump `1e-4`), column 1 is 0.
+    * `"vega"`: shape `(m, n + 1)`, the derivative in the variance factor.
+    """
+
+    def __init__(self, generator: Heston):
+        self.generator = generator
+
+    def supports(self, contract) -> bool:
+        return getattr(contract, "kind", None) in ("call", "put") and hasattr(contract, "strike")
+
+    def _check(self, contract) -> None:
+        if not self.supports(contract):
+            raise ValueError(f"HestonPricer prices vanilla calls and puts, got {contract!r}")
+
+    def premium(self, contract) -> PriceResult:
+        self._check(contract)
+        g = self.generator
+        call, _, _ = heston_call_quad(
+            g.s0, g.v0, g.maturity, contract.strike, g.kappa, g.theta, g.xi, g.rho, g.r
+        )
+        value = call
+        if contract.kind == "put":
+            value = call - g.s0 + contract.strike * np.exp(-g.r * g.maturity)
+        return PriceResult(value=float(value), stderr=0.0)
+
+    def _columns(self, paths: Paths, contract):
+        self._check(contract)
+        g = self.generator
+        _check_maturity(paths, g.maturity)
+        spot = paths.features[:, :, 0]
+        variance = paths.features[:, :, 1]
+        price = np.empty(spot.shape)
+        delta = np.empty(spot.shape)
+        vega = np.empty(spot.shape)
+        for k, t in enumerate(paths.time):
+            tau = g.maturity - t
+            price[:, k], delta[:, k], vega[:, k] = g.greeks(
+                spot[:, k], variance[:, k], tau, contract.strike
+            )
+        if contract.kind == "put":
+            tau = g.maturity - paths.time
+            price = price - spot + contract.strike * np.exp(-g.r * tau)[None, :]
+            delta = delta - 1.0
+        return spot, variance, price, delta, vega
+
+    def price_along(self, paths: Paths, contract) -> np.ndarray:
+        return self._columns(paths, contract)[2]
+
+    def greeks(self, paths: Paths, contract, which=("delta",)) -> dict[str, np.ndarray]:
+        unknown = set(which) - {"delta", "gamma", "vega"}
+        if unknown:
+            raise ValueError(f"HestonPricer has no greeks {sorted(unknown)}")
+        g = self.generator
+        spot, variance, _, delta, vega = self._columns(paths, contract)
+        out: dict[str, np.ndarray] = {}
+        if "delta" in which:
+            per = np.zeros(spot.shape + (2,))
+            per[:, :, 0] = delta
+            for k, t in enumerate(paths.time):
+                tau = g.maturity - t
+                slope = np.exp(-g.r * tau) * float(np.asarray(d_variance_swap_dv(tau, g.kappa)))
+                if slope >= 1e-12:
+                    per[:, k, 1] = vega[:, k] / slope
+            out["delta"] = per
+        if "gamma" in which:
+            per = np.zeros(spot.shape + (2,))
+            h = 1e-4 * spot
+            for k, t in enumerate(paths.time):
+                tau = g.maturity - t
+                _, up, _ = g.greeks(spot[:, k] + h[:, k], variance[:, k], tau, contract.strike)
+                _, down, _ = g.greeks(spot[:, k] - h[:, k], variance[:, k], tau, contract.strike)
+                per[:, k, 0] = (up - down) / (2.0 * h[:, k])
+            out["gamma"] = per
+        if "vega" in which:
+            out["vega"] = vega
+        return out

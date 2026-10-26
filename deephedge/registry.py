@@ -396,7 +396,7 @@ _MARKET = {
 
 
 class BlackScholesStub(Block):
-    """`generator.black_scholes`: spot only, closed-form pricer (`deephedge.env`)."""
+    """`generator.black_scholes`: spot only, closed-form pricer (`deephedge.generators.bs`)."""
 
     param_schema = {**_MARKET, "sigma": _num(0.2, **_POSITIVE)}
 
@@ -406,15 +406,19 @@ class BlackScholesStub(Block):
 
 
 class HestonStub(Block):
-    """`generator.heston`: spot and variance swap, COS pricer (`deephedge.heston`)."""
+    """`generator.heston`: spot and variance swap, COS pricer (`deephedge.generators.heston`)."""
 
     param_schema = {
         **_MARKET,
         "kappa": _num(1.0, **_POSITIVE),
-        "theta": _num(0.04, **_POSITIVE),
-        "xi": _num(2.0, **_POSITIVE),
+        "theta": _num(0.04, 0.0),
+        "xi": _num(2.0, 0.0, doc="vol of vol; 0 is the Black-Scholes limit"),
         "rho": _num(-0.7, -1.0, 1.0),
         "v0": _num(0.04, 0.0),
+        "kappa_sim": _num(None, **_POSITIVE, doc="simulation kappa; unset means kappa"),
+        "theta_sim": _num(None, 0.0, doc="simulation theta; unset means theta"),
+        "n_cos": Param("int", 128, lower=16, doc="COS terms along a path"),
+        "truncation": _num(12.0, **_POSITIVE, doc="COS range in standard deviations"),
     }
 
     @classmethod

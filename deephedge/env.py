@@ -17,7 +17,7 @@ Black-Scholes has `d = 1`, the spot, and `f = 1`, the same spot. The
 benchmark hedge is the analytic call delta. The premium is the analytic
 call price.
 
-Heston is `deephedge.heston.Heston`. Features are `(spot, variance)`,
+Heston is `deephedge.generators.heston.Heston`. Features are `(spot, variance)`,
 so `f = 2`. Instruments are the spot and a variance swap, so `d = 2`.
 The swap's price belongs in `instruments`; the variance factor stays in
 `features`, because a feature is not something the P&L can trade. The
@@ -30,20 +30,24 @@ the discounted price, or a cash `unit` when the mark is the wrong notional
 an instrument trades, including liquidation at maturity.
 `QuadraticCost` is a smooth market-impact charge. See `deephedge.costs`.
 
+Since M02 the pieces live in their own modules and are re-exported here, so
+PR 1 imports keep working: `Paths` in `deephedge.paths`, the `Market` base in
+`deephedge.generators.base` (deprecated, one release), `BlackScholes` in
+`deephedge.generators.bs`, and the Black-Scholes formulas in
+`deephedge.pricing`. New code uses a `Generator`, a contract and a `Pricer`.
+
 Not implemented yet, and where it will plug in:
 
 * Rough Bergomi: the volatility has memory, so the feature path has to carry
-  it. The simulator will come from the sibling package `roughvol`.
+  it. The simulator will come from the sibling package `roughvol` (M11a).
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Protocol
 
 import numpy as np
-from scipy.stats import norm
 
 from deephedge.costs import (
     FixedPlusProportional,
@@ -51,7 +55,11 @@ from deephedge.costs import (
     QuadraticCost,
     as_cost,
 )
-from deephedge.markets import bs_paths, time_grid
+from deephedge.generators.base import Market, call_on_spot
+from deephedge.generators.base import check_maturity as _check_maturity  # noqa: F401
+from deephedge.generators.bs import BlackScholes
+from deephedge.paths import Paths
+from deephedge.pricing import bs_call_delta, bs_call_price
 
 __all__ = [
     "BlackScholes",
@@ -67,172 +75,6 @@ __all__ = [
     "call_on_spot",
     "terminal_pnl",
 ]
-
-
-def bs_call_price(S, K: float, tau, sigma: float, r: float = 0.0):
-    """Black-Scholes call price with time to maturity tau. Vectorised in S and tau."""
-    S = np.asarray(S, dtype=float)
-    tau = np.asarray(tau, dtype=float)
-    intrinsic = np.maximum(S - K, 0.0)
-    safe_tau = np.where(tau > 0, tau, 1.0)
-    sd = sigma * np.sqrt(safe_tau)
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * safe_tau) / sd
-    d2 = d1 - sd
-    price = S * norm.cdf(d1) - K * np.exp(-r * safe_tau) * norm.cdf(d2)
-    return np.where(tau > 0, price, intrinsic)
-
-
-def bs_call_delta(S, K: float, tau, sigma: float, r: float = 0.0):
-    """Black-Scholes call delta N(d1). At tau = 0 returns the indicator S > K."""
-    S = np.asarray(S, dtype=float)
-    tau = np.asarray(tau, dtype=float)
-    safe_tau = np.where(tau > 0, tau, 1.0)
-    sd = sigma * np.sqrt(safe_tau)
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * safe_tau) / sd
-    return np.where(tau > 0, norm.cdf(d1), (S > K).astype(float))
-
-
-def call_on_spot(instruments: np.ndarray, strike: float) -> np.ndarray:
-    """Undiscounted call payoff on the first instrument, shape (m,)."""
-    return np.maximum(np.asarray(instruments, dtype=float)[:, -1, 0] - strike, 0.0)
-
-
-@dataclass(frozen=True)
-class Paths:
-    """One Monte Carlo batch drawn by a market.
-
-    `time` has shape `(n + 1,)` and runs from 0 to maturity.
-    `instruments` has shape `(m, n + 1, d)`.
-    `features` has shape `(m, n + 1, f)`.
-    `discount` has shape `(n + 1,)`, or `(m, n + 1)` if rates are ever
-    stochastic. Entries are factors to time 0.
-    """
-
-    time: np.ndarray
-    instruments: np.ndarray
-    features: np.ndarray
-    discount: np.ndarray
-
-    def __post_init__(self) -> None:
-        time = np.asarray(self.time, dtype=float)
-        instruments = np.asarray(self.instruments, dtype=float)
-        features = np.asarray(self.features, dtype=float)
-        discount = np.asarray(self.discount, dtype=float)
-        if instruments.ndim != 3:
-            raise ValueError(f"instruments must have shape (m, n + 1, d), got {instruments.shape}")
-        m, n_plus, _d = instruments.shape
-        if features.shape[:2] != (m, n_plus):
-            raise ValueError(
-                "features must share the path and time axes of instruments, "
-                f"got {features.shape} against {instruments.shape}"
-            )
-        if time.shape != (n_plus,):
-            raise ValueError(f"time must have shape ({n_plus},), got {time.shape}")
-        if discount.shape != (n_plus,) and discount.shape != (m, n_plus):
-            raise ValueError(
-                f"discount must have shape ({n_plus},) or ({m}, {n_plus}), got {discount.shape}"
-            )
-        object.__setattr__(self, "time", time)
-        object.__setattr__(self, "instruments", instruments)
-        object.__setattr__(self, "features", features)
-        object.__setattr__(self, "discount", discount)
-
-    @property
-    def spot(self) -> np.ndarray:
-        """First instrument, shape (m, n + 1). The underlying of a call."""
-        return self.instruments[:, :, 0]
-
-    @property
-    def n_steps(self) -> int:
-        return int(self.time.size - 1)
-
-    @property
-    def n_instruments(self) -> int:
-        return int(self.instruments.shape[-1])
-
-    @property
-    def n_features(self) -> int:
-        return int(self.features.shape[-1])
-
-    def discounted_instruments(self) -> np.ndarray:
-        """Instrument prices in time-0 money, shape (m, n + 1, d)."""
-        if self.discount.ndim == 1:
-            return self.instruments * self.discount[None, :, None]
-        return self.instruments * self.discount[:, :, None]
-
-    def discount_terminal(self) -> np.ndarray | float:
-        """Discount factor at maturity. A scalar, or shape (m,) if rates vary."""
-        if self.discount.ndim == 1:
-            return self.discount[-1]
-        return self.discount[:, -1]
-
-
-class Market(ABC):
-    """A volatility model and the liability being hedged.
-
-    `simulate` draws instruments and features. `payoff` is the liability
-    at maturity, undiscounted. `price_along` is the model price of that
-    liability at each date, in time-t money. `benchmark_positions` is the
-    hedge in each instrument at `t_0, ..., t_{n-1}`, shape `(m, n, d)`.
-    `premium` is the time-0 price in time-0 money.
-
-    Subclasses decide what is tradable and what is merely observed. The P&L
-    engine only trades `instruments`.
-    """
-
-    maturity: float
-
-    @property
-    @abstractmethod
-    def n_instruments(self) -> int:
-        """How many instruments `simulate` puts on the path."""
-
-    @property
-    @abstractmethod
-    def n_features(self) -> int:
-        """How many features `simulate` puts on the path."""
-
-    @property
-    @abstractmethod
-    def instrument_names(self) -> tuple[str, ...]:
-        """Names of the instrument axis, length `n_instruments`."""
-
-    @property
-    @abstractmethod
-    def feature_names(self) -> tuple[str, ...]:
-        """Names of the feature axis, length `n_features`."""
-
-    @abstractmethod
-    def simulate(self, m: int, n: int, seed: int) -> Paths:
-        """Draw `m` paths on `n` steps over `[0, maturity]`.
-
-        `seed` is passed to `np.random.default_rng`. The same seed and
-        the same market give the same paths.
-        """
-
-    @abstractmethod
-    def payoff(self, paths: Paths) -> np.ndarray:
-        """Undiscounted liability at maturity, shape (m,)."""
-
-    @abstractmethod
-    def price_along(self, paths: Paths) -> np.ndarray:
-        """Model price of the liability at each date, shape (m, n + 1).
-
-        Prices are in time-t money. Multiply by `paths.discount` to get
-        the time-0 value, which is a martingale under the pricing measure.
-        """
-
-    @abstractmethod
-    def benchmark_positions(self, paths: Paths) -> np.ndarray:
-        """Benchmark hedge at each trading date, shape (m, n, n_instruments).
-
-        Position k is held over `[t_k, t_{k+1}]`. There is no position at
-        maturity: the book is liquidated and the payoff is paid.
-        """
-
-    @abstractmethod
-    def premium(self) -> float:
-        """Price of the liability at t = 0, in time-0 money."""
 
 
 class CostModel(Protocol):
@@ -330,108 +172,3 @@ class Environment:
         if premium is None:
             premium = self.market.premium()
         return terminal_pnl(paths, positions, self.market.payoff(paths), self.cost, premium)
-
-
-def _check_maturity(paths: Paths, maturity: float) -> None:
-    if not np.isclose(paths.time[-1], maturity, rtol=0.0, atol=1e-12):
-        raise ValueError(f"path ends at {paths.time[-1]}, market maturity is {maturity}")
-
-
-@dataclass(frozen=True)
-class BlackScholes(Market):
-    """Black-Scholes market with one instrument, the spot.
-
-    `dS = mu S dt + sigma S dW`, simulated exactly on a uniform grid, so
-    the log price has no time-discretisation error. The liability is a
-    European call with this strike and maturity. The benchmark hedge is the
-    analytic delta in the spot.
-
-    `mu` is the drift of the simulation measure. The price and the delta
-    use `r`, the risk-free rate. Set `mu = r` to draw under the pricing
-    measure: that is the measure in which the discounted price is a
-    martingale. Session 00 uses `mu = r = 0`.
-
-    Features and the instrument are both the spot. A Heston market keeps
-    this call on the first instrument and adds the variance as a second
-    feature; it does not change the meaning of feature column 0.
-    """
-
-    s0: float = 100.0
-    strike: float = 100.0
-    maturity: float = 30 / 365
-    sigma: float = 0.2
-    r: float = 0.0
-    mu: float = 0.0
-
-    @property
-    def n_instruments(self) -> int:
-        return 1
-
-    @property
-    def n_features(self) -> int:
-        return 1
-
-    @property
-    def instrument_names(self) -> tuple[str, ...]:
-        return ("spot",)
-
-    @property
-    def feature_names(self) -> tuple[str, ...]:
-        return ("spot",)
-
-    def simulate(self, m: int, n: int, seed: int) -> Paths:
-        """Draw `m` spot paths on `n` steps.
-
-        The Gaussian draw is `bs_paths`, which uses
-        `np.random.default_rng(seed)` and consumes one standard normal
-        array of shape `(m, n)`. A later market that needs several
-        Brownian motions should document the order it draws them from that
-        same generator.
-        """
-        spot = bs_paths(m, n, self.maturity, self.sigma, s0=self.s0, mu=self.mu, seed=seed)
-        return self.paths_from_spot(spot)
-
-    def paths_from_spot(self, spot: np.ndarray) -> Paths:
-        """Wrap a spot array of shape `(m, n + 1)` as a path of this market.
-
-        Does not draw. The time grid runs to `maturity`. Discount factors
-        use `r`. The feature column is the spot.
-        """
-        spot = np.asarray(spot, dtype=float)
-        if spot.ndim != 2:
-            raise ValueError(f"spot must have shape (m, n + 1), got {spot.shape}")
-        n = spot.shape[1] - 1
-        time = time_grid(n, self.maturity)
-        instruments = spot[:, :, None]
-        return Paths(
-            time=time,
-            instruments=instruments,
-            features=instruments,
-            discount=np.exp(-self.r * time),
-        )
-
-    def payoff(self, paths: Paths) -> np.ndarray:
-        return call_on_spot(paths.instruments, self.strike)
-
-    def price(self, spot, tau):
-        """Black-Scholes call price. Vectorised in spot and in time to maturity."""
-        return bs_call_price(spot, self.strike, tau, self.sigma, self.r)
-
-    def delta(self, spot, tau):
-        """Black-Scholes call delta. Vectorised in spot and in time to maturity."""
-        return bs_call_delta(spot, self.strike, tau, self.sigma, self.r)
-
-    def price_along(self, paths: Paths) -> np.ndarray:
-        _check_maturity(paths, self.maturity)
-        tau = self.maturity - paths.time
-        return self.price(paths.instruments[:, :, 0], tau)
-
-    def benchmark_positions(self, paths: Paths) -> np.ndarray:
-        """Analytic delta at `t_0, ..., t_{n-1}`, shape `(m, n, 1)`."""
-        _check_maturity(paths, self.maturity)
-        tau = self.maturity - paths.time[:-1]
-        delta = self.delta(paths.instruments[:, :-1, 0], tau)
-        return np.asarray(delta, dtype=float)[..., None]
-
-    def premium(self) -> float:
-        return float(np.asarray(self.price(self.s0, self.maturity)))
