@@ -66,6 +66,7 @@ __all__ = [
     "CostModel",
     "Environment",
     "FixedPlusProportional",
+    "Ledger",
     "Market",
     "Paths",
     "ProportionalCost",
@@ -125,22 +126,60 @@ def terminal_pnl(
 ) -> np.ndarray:
     """Terminal P&L in time-0 money of a short liability, shape (m,).
 
-    `P&L = premium - discount_T * payoff + gains - costs`.
-
-    `positions` has shape `(m, n)` for one instrument or `(m, n, d)`
-    in general. Position k is held over `[t_k, t_{k+1}]`. Gains sum, over
-    instruments and dates, the position times the change in the discounted
-    instrument price. Costs are whatever `cost` charges on those discounted
-    prices; a number or a tuple is a proportional rate.
+    Deprecated alias, kept for PR 1 imports: `Environment(None, cost).pnl(paths,
+    positions, premium, payoff=payoff)`. `payoff` is undiscounted.
     """
-    prices = paths.discounted_instruments()
-    pos = _as_positions(positions, prices.shape[-1])
-    if pos.shape[0] != prices.shape[0] or pos.shape[1] != prices.shape[1] - 1:
-        raise ValueError(f"positions shape {pos.shape} does not match prices shape {prices.shape}")
-    gains = (pos * np.diff(prices, axis=1)).sum(axis=(1, 2))
-    pay = np.asarray(payoff, dtype=float) * paths.discount_terminal()
-    costs = as_cost(cost).amount(prices, pos)
-    return np.asarray(premium, dtype=float) - pay + gains - costs
+    return Environment(None, cost).pnl(paths, positions, premium, payoff=payoff)
+
+
+def _torch_prices_and_positions(prices, positions):
+    """Prices as `(m, n + 1, d)` and positions as `(m, n, d)`, checked."""
+    if prices.ndim == 2:
+        prices = prices.unsqueeze(-1)
+        positions = positions.unsqueeze(-1)
+    elif prices.ndim != 3:
+        raise ValueError(f"prices must have shape (m, n + 1) or (m, n + 1, d), got {prices.shape}")
+    if positions.shape != (prices.shape[0], prices.shape[1] - 1, prices.shape[2]):
+        raise ValueError(f"positions shape {tuple(positions.shape)} does not match {prices.shape}")
+    return prices, positions
+
+
+@dataclass(frozen=True)
+class Ledger:
+    """The per-date book of a hedge, in time-0 money. Built by `Environment.ledger`.
+
+    Dates are `t_0, ..., t_n`; `d` instruments. At date k the hedger trades
+    from the previous position to `position[:, k]` (zero before `t_0` and
+    after `t_n`, where the book is liquidated) and pays `cost[:, k]`.
+
+    * `price` `(m, n + 1, d)`: discounted instrument prices.
+    * `position` `(m, n + 1, d)`: held after trading at `t_k`; the last is 0.
+    * `trade` `(m, n + 1, d)`: signed change in position at `t_k`.
+    * `cost` `(m, n + 1)`: cost paid at `t_k`.
+    * `gain` `(m, n + 1)`: gain of the previous position over `[t_{k-1}, t_k]`; 0 at `t_0`.
+    * `cash` `(m, n + 1)`: premium, minus what trades and costs paid, up to `t_k`.
+    * `holdings` `(m, n + 1)`: `position . price` after trading at `t_k`.
+    * `payoff` `(m,)`: discounted liability paid at `t_n`.
+    * `value` `(m, n + 1)`: premium plus cumulative gains minus cumulative
+      costs, less the payoff at `t_n`. It equals `cash + holdings` before
+      maturity, and its last column is the terminal P&L.
+    """
+
+    time: np.ndarray
+    price: np.ndarray
+    position: np.ndarray
+    trade: np.ndarray
+    cost: np.ndarray
+    gain: np.ndarray
+    cash: np.ndarray
+    holdings: np.ndarray
+    payoff: np.ndarray
+    value: np.ndarray
+
+    @property
+    def final_value(self) -> np.ndarray:
+        """Terminal P&L per path, shape (m,). Equals `Environment.pnl`."""
+        return self.value[:, -1]
 
 
 @dataclass(frozen=True)
@@ -148,27 +187,170 @@ class Environment:
     """What a hedger is trained against: a market and a cost model.
 
     Simulation uses only the market, so the same paths can be scored under
-    another cost without drawing again. `pnl` is the terminal P&L in
-    time-0 money. Risk measures take that array and nothing else.
+    another cost without drawing again. `pnl` (numpy) and `pnl_torch`
+    (differentiable) are the only two terminal P&L functions in the package;
+    `ledger` is the same arithmetic date by date. Risk measures take the
+    P&L array and nothing else.
+
+        P&L = premium - discount_T * payoff + gains - costs
+
+    Gains sum, over instruments and dates, the position held over
+    `[t_k, t_{k+1}]` times the change in the discounted instrument price.
+    Costs are whatever `cost` charges on those discounted prices, opening and
+    liquidation included; a number or a tuple is a proportional rate.
+
+    `market` may be `None` for array-level scoring (the training loops and
+    the PR 1 aliases): then pass `premium` and `payoff` explicitly.
     """
 
-    market: Market
+    market: Market | None
     cost: CostModel | float | tuple[float, ...] = 0.0
 
     def simulate(self, m: int, n: int, seed: int) -> Paths:
-        return self.market.simulate(m, n, seed)
+        return self._market().simulate(m, n, seed)
+
+    def _market(self) -> Market:
+        if self.market is None:
+            raise ValueError("this Environment has no market; pass premium and payoff")
+        return self.market
+
+    def _premium(self, premium):
+        return self._market().premium() if premium is None else premium
+
+    def _payoff(self, paths: Paths, payoff) -> np.ndarray:
+        """Discounted liability at maturity, shape (m,)."""
+        raw = self._market().payoff(paths) if payoff is None else payoff
+        return np.asarray(raw, dtype=float) * paths.discount_terminal()
 
     def pnl(
         self,
         paths: Paths,
         positions: np.ndarray,
         premium: float | None = None,
+        *,
+        payoff: np.ndarray | None = None,
     ) -> np.ndarray:
-        """P&L of `positions` in this environment. Shape (m,).
+        """Terminal P&L of `positions` in time-0 money. Shape (m,).
 
-        The premium defaults to the market's time-0 price. Pass another
-        number to sell the claim at a different price.
+        `positions` has shape `(m, n)` for one instrument or `(m, n, d)`.
+        The premium defaults to the market's time-0 price and `payoff` to the
+        market's undiscounted liability; pass either to override.
         """
-        if premium is None:
-            premium = self.market.premium()
-        return terminal_pnl(paths, positions, self.market.payoff(paths), self.cost, premium)
+        prices = paths.discounted_instruments()
+        pos = _as_positions(positions, prices.shape[-1])
+        if pos.shape[0] != prices.shape[0] or pos.shape[1] != prices.shape[1] - 1:
+            raise ValueError(
+                f"positions shape {pos.shape} does not match prices shape {prices.shape}"
+            )
+        gains = (pos * np.diff(prices, axis=1)).sum(axis=(1, 2))
+        pay = self._payoff(paths, payoff)
+        costs = as_cost(self.cost).amount(prices, pos)
+        return np.asarray(self._premium(premium), dtype=float) - pay + gains - costs
+
+    def pnl_torch(
+        self,
+        prices,
+        positions,
+        payoff=None,
+        premium: float | None = None,
+        *,
+        exact: bool = True,
+    ):
+        """Terminal P&L in torch, differentiable in `positions`. Shape (m,).
+
+        `prices` is a `Paths` or a tensor of discounted instrument prices,
+        shape `(m, n + 1, d)` or `(m, n + 1)` for one instrument. From a
+        `Paths` the prices, the discounted payoff and the premium come from
+        the market in float64 unless given. With a tensor, `payoff` is the
+        discounted liability, a tensor of shape `(m,)` or a callable of the
+        terminal spot (column 0), and `premium` is required unless the
+        environment has a market.
+
+        `exact=True` matches `pnl`, including the fixed-cost indicator.
+        `exact=False` asks a cost model for its smooth training surrogate.
+        A rate, or a tuple of rates, charges `rate * |change| * price` and
+        has no surrogate. Gains and costs sum over instruments; the payoff is
+        charged once.
+        """
+        import torch
+
+        if isinstance(prices, Paths):
+            paths = prices
+            disc = torch.as_tensor(paths.discounted_instruments(), dtype=torch.float64)
+            if payoff is None:
+                payoff = torch.as_tensor(self._payoff(paths, None), dtype=torch.float64)
+            prices = disc
+        if payoff is None:
+            raise ValueError("pass payoff with a tensor of prices")
+        premium = self._premium(premium)
+        model = self.cost if hasattr(self.cost, "amount_torch") else None
+        if prices.ndim == 2 and model is None:
+            # One instrument and a rate: the Black-Scholes training loss, kept in this
+            # order so a float32 training run sums exactly as it did in PR 2.
+            pay = payoff(prices[:, -1]) if callable(payoff) else payoff
+            gains = (positions * (prices[:, 1:] - prices[:, :-1])).sum(dim=1)
+            zero = torch.zeros_like(prices[:, :1])
+            full = torch.cat([zero, positions, zero], dim=1)
+            costs = self.cost * ((full[:, 1:] - full[:, :-1]).abs() * prices).sum(dim=1)
+            return premium - pay + gains - costs
+        prices, positions = _torch_prices_and_positions(prices, positions)
+        pay = payoff(prices[:, -1, 0]) if callable(payoff) else payoff
+        gains = (positions * (prices[:, 1:] - prices[:, :-1])).sum(dim=(1, 2))
+        if model is not None:
+            costs = model.amount_torch(prices, positions, exact=exact)
+        else:
+            m, _, d = prices.shape
+            zero = torch.zeros(m, 1, d, dtype=prices.dtype, device=prices.device)
+            full = torch.cat([zero, positions, zero], dim=1)
+            traded = (full[:, 1:] - full[:, :-1]).abs()
+            rate = torch.as_tensor(self.cost, dtype=prices.dtype, device=prices.device)
+            costs = (rate * traded * prices).sum(dim=(1, 2))
+        return premium - pay + gains - costs
+
+    def ledger(
+        self,
+        paths: Paths,
+        positions: np.ndarray,
+        premium: float | None = None,
+        *,
+        payoff: np.ndarray | None = None,
+    ) -> Ledger:
+        """The book of `positions` date by date. `final_value` equals `pnl`.
+
+        Same inputs as `pnl`. The cost model must split its charge by date
+        (`per_date`); the three in `deephedge.costs` do.
+        """
+        model = as_cost(self.cost)
+        if not hasattr(model, "per_date"):
+            raise TypeError(f"{type(model).__name__} has no per_date, so no ledger")
+        prices = paths.discounted_instruments()
+        pos = _as_positions(positions, prices.shape[-1])
+        if pos.shape[0] != prices.shape[0] or pos.shape[1] != prices.shape[1] - 1:
+            raise ValueError(
+                f"positions shape {pos.shape} does not match prices shape {prices.shape}"
+            )
+        m, _, d = pos.shape
+        flat = np.zeros((m, 1, d))
+        held = np.concatenate([pos, flat], axis=1)
+        trade = np.diff(np.concatenate([flat, pos, flat], axis=1), axis=1)
+        cost = model.per_date(prices, pos)
+        gain = np.zeros(cost.shape)
+        gain[:, 1:] = (pos * np.diff(prices, axis=1)).sum(axis=2)
+        premium = float(self._premium(premium))
+        cash = premium - np.cumsum((trade * prices).sum(axis=2) + cost, axis=1)
+        holdings = (held * prices).sum(axis=2)
+        pay = self._payoff(paths, payoff)
+        value = premium + np.cumsum(gain - cost, axis=1)
+        value[:, -1] -= pay
+        return Ledger(
+            time=np.asarray(paths.time, dtype=float),
+            price=prices,
+            position=held,
+            trade=trade,
+            cost=cost,
+            gain=gain,
+            cash=cash,
+            holdings=holdings,
+            payoff=pay,
+            value=value,
+        )

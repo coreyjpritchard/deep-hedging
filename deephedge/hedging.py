@@ -20,7 +20,8 @@ and does that discounting for you.
 With one instrument and a proportional cost `c`, every trade costs
 `c * |change in position| * S`, including the opening and closing trades
 (Buehler, Gonon, Teichmann, Wood 2019, section 3). Several instruments are
-summed the same way, in `terminal_pnl` and in the torch P&L.
+summed the same way. Every P&L here goes through `Environment.pnl` or
+`Environment.pnl_torch`; the functions below are the PR 2 entry points.
 """
 
 from __future__ import annotations
@@ -37,7 +38,6 @@ from deephedge.env import (
     ProportionalCost,
     bs_call_delta,
     bs_call_price,
-    terminal_pnl,
 )
 
 __all__ = [
@@ -80,7 +80,7 @@ def pnl_from_positions(
     discounted if interest is nonzero. `payoff` is a function of `S_T`
     or an array of terminal payoffs, shape (m,), already in the same units
     as `paths`. Every policy (delta, network, no hedge) can go through
-    this function. The multi-instrument form is `terminal_pnl`.
+    this function. It is `Environment.pnl` on one undiscounted instrument.
     """
     paths = np.asarray(paths, dtype=float)
     positions = np.asarray(positions, dtype=float)
@@ -92,11 +92,7 @@ def pnl_from_positions(
         features=paths[:, :, None],
         discount=np.ones(n + 1),
     )
-    return terminal_pnl(wrapped, positions, pay, cost, premium)
-
-
-def _is_cost_model(cost) -> bool:
-    return hasattr(cost, "amount_torch")
+    return Environment(None, cost).pnl(wrapped, positions, premium, payoff=pay)
 
 
 def pnl_from_positions_torch(
@@ -108,48 +104,12 @@ def pnl_from_positions_torch(
     *,
     exact: bool = True,
 ) -> torch.Tensor:
-    """Torch version of the terminal P&L, differentiable in `positions`.
+    """Torch terminal P&L. Alias of `Environment(None, cost).pnl_torch(...)`.
 
-    One instrument and a plain rate: `paths` has shape `(m, n + 1)` and
-    `positions` shape `(m, n)`. That branch is the Black-Scholes training
-    loss. `exact` is not read there.
-
-    A cost model (`amount_torch`) is applied to prices of shape
-    `(m, n + 1, d)`. `exact=True` matches numpy `amount`, including the
-    fixed-cost indicator. `exact=False` asks the model for its smooth
-    training surrogate. A proportional rate, a tuple of rates, has no
-    surrogate: the charge is `rate * |change| * price`.
-
-    A callable payoff receives the spot at maturity. Pass prices that are
-    already discounted, and a payoff already multiplied by the maturity
-    discount. Gains and costs sum over instruments, and the payoff is
-    charged once.
+    `paths` are discounted prices, shape `(m, n + 1)` or `(m, n + 1, d)`;
+    `payoff` is discounted, a tensor or a callable of the terminal spot.
     """
-    if paths.ndim == 2 and not _is_cost_model(cost):
-        pay = payoff(paths[:, -1]) if callable(payoff) else payoff
-        gains = (positions * (paths[:, 1:] - paths[:, :-1])).sum(dim=1)
-        zero = torch.zeros_like(paths[:, :1])
-        full = torch.cat([zero, positions, zero], dim=1)
-        costs = cost * ((full[:, 1:] - full[:, :-1]).abs() * paths).sum(dim=1)
-        return premium - pay + gains - costs
-    if paths.ndim == 2:
-        paths = paths.unsqueeze(-1)
-        positions = positions.unsqueeze(-1)
-    elif paths.ndim != 3:
-        raise ValueError(f"paths must have shape (m, n + 1) or (m, n + 1, d), got {paths.shape}")
-    spot_T = paths[:, -1, 0]
-    pay = payoff(spot_T) if callable(payoff) else payoff
-    gains = (positions * (paths[:, 1:] - paths[:, :-1])).sum(dim=(1, 2))
-    if _is_cost_model(cost):
-        costs = cost.amount_torch(paths, positions, exact=exact)
-    else:
-        m, _, d = paths.shape
-        zero = torch.zeros(m, 1, d, dtype=paths.dtype, device=paths.device)
-        full = torch.cat([zero, positions, zero], dim=1)
-        traded = (full[:, 1:] - full[:, :-1]).abs()
-        rate = torch.as_tensor(cost, dtype=paths.dtype, device=paths.device)
-        costs = (rate * traded * paths).sum(dim=(1, 2))
-    return premium - pay + gains - costs
+    return Environment(None, cost).pnl_torch(paths, positions, payoff, premium, exact=exact)
 
 
 def delta_positions(

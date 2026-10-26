@@ -21,7 +21,7 @@ from deephedge.env import (
     ProportionalCost,
     QuadraticCost,
 )
-from deephedge.hedging import call_payoff, pnl_from_positions_torch
+from deephedge.hedging import call_payoff
 from deephedge.markets import to_torch
 from deephedge.policy import GammaPolicy, HestonPolicy, MLPPolicy, rollout, rollout_positions
 from deephedge.risk import cvar_torch, entropic_torch
@@ -103,7 +103,7 @@ def train(
 ) -> TrainResult:
     """Minimise risk_fn(P&L) over the policy weights with Adam on minibatches of paths.
 
-    The P&L is simulated in torch exactly as `pnl_from_positions` does in numpy, so the
+    The P&L is `Environment.pnl_torch`, the same arithmetic as `Environment.pnl`, so the
     gradient flows through every trade and every cost. A plain rate ignores `exact`.
     A cost model is trained on its smooth surrogate (`exact=False`); the number
     recorded in `history` is the exact charge. `history` holds the full-sample
@@ -115,6 +115,7 @@ def train(
     optimiser = torch.optim.Adam(policy.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimiser, T_max=max(epochs, 1))
     m = paths_tensor.shape[0]
+    env = Environment(None, cost)
     history = []
     start = time.perf_counter()
     for _ in range(epochs):
@@ -122,7 +123,7 @@ def train(
         for i in range(0, m, batch_size):
             batch = paths_tensor[order[i : i + batch_size]]
             positions = rollout(policy, batch, T)
-            pnl = pnl_from_positions_torch(batch, positions, payoff_fn, cost, premium, exact=False)
+            pnl = env.pnl_torch(batch, positions, payoff_fn, premium, exact=False)
             loss = risk_fn(pnl)
             optimiser.zero_grad()
             loss.backward()
@@ -143,8 +144,8 @@ def objective(
     """risk_fn of the policy's P&L on the given paths, without gradients."""
     with torch.no_grad():
         positions = rollout(policy, paths_tensor, policy.maturity)
-        pnl = pnl_from_positions_torch(
-            paths_tensor, positions, payoff_fn, cost, premium, exact=True
+        pnl = Environment(None, cost).pnl_torch(
+            paths_tensor, positions, payoff_fn, premium, exact=True
         )
         return float(risk_fn(pnl))
 
@@ -291,6 +292,7 @@ def train_book(
     optimiser = torch.optim.Adam(policy.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimiser, T_max=max(epochs, 1))
     m, _, n_instruments = prices.shape
+    env = Environment(None, cost)
     history = []
     start = time.perf_counter()
     for _ in range(epochs):
@@ -298,9 +300,7 @@ def train_book(
         for i in range(0, m, batch_size):
             idx = order[i : i + batch_size]
             positions = rollout_positions(policy, features[idx], times, n_instruments)
-            pnl = pnl_from_positions_torch(
-                prices[idx], positions, payoff[idx], cost, premium, exact=False
-            )
+            pnl = env.pnl_torch(prices[idx], positions, payoff[idx], premium, exact=False)
             loss = risk_fn(pnl)
             optimiser.zero_grad()
             loss.backward()
@@ -315,7 +315,7 @@ def train_book(
 def _book_objective(policy, prices, features, times, payoff, risk_fn, cost, premium) -> float:
     with torch.no_grad():
         positions = rollout_positions(policy, features, times, prices.shape[-1])
-        pnl = pnl_from_positions_torch(prices, positions, payoff, cost, premium, exact=True)
+        pnl = Environment(None, cost).pnl_torch(prices, positions, payoff, premium, exact=True)
         return float(risk_fn(pnl))
 
 

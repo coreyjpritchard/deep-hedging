@@ -201,6 +201,12 @@ class ProportionalCost:
         basis = charge_basis(prices, self.unit)
         return (rate * traded * basis).sum(axis=(1, 2))
 
+    def per_date(self, prices: np.ndarray, positions: np.ndarray) -> np.ndarray:
+        """Cost paid at each date, shape `(m, n + 1)`. Sums to `amount` per path."""
+        prices, _pos, traded = _prepare(prices, positions)
+        rate = _rates(self.rate, prices.shape[-1], "rate")
+        return (rate * traded * charge_basis(prices, self.unit)).sum(axis=2)
+
     def amount_torch(self, prices, positions, *, exact: bool = True):
         """Torch version of `amount`. `exact` is unused: `|x|` is already usable in training.
 
@@ -254,6 +260,15 @@ class FixedPlusProportional:
         hits = (traded > 0).astype(float)
         return proportional + (fixed * hits).sum(axis=(1, 2))
 
+    def per_date(self, prices: np.ndarray, positions: np.ndarray) -> np.ndarray:
+        """Cost paid at each date, shape `(m, n + 1)`, with the exact indicator."""
+        prices, _pos, traded = _prepare(prices, positions)
+        d = prices.shape[-1]
+        rate = _rates(self.rate, d, "rate")
+        fixed = _rates(self.fixed, d, "fixed")
+        proportional = (rate * traded * charge_basis(prices, self.unit)).sum(axis=2)
+        return proportional + (fixed * (traded > 0).astype(float)).sum(axis=2)
+
     def amount_torch(self, prices, positions, *, exact: bool = True):
         """Torch version of `amount`. `exact=False` is the smooth indicator used in training."""
         traded = _torch_traded(positions)
@@ -295,6 +310,12 @@ class QuadraticCost:
         impact = _rates(self.impact, prices.shape[-1], "impact")
         basis = charge_basis(prices, self.unit)
         return (impact * traded**2 * basis).sum(axis=(1, 2))
+
+    def per_date(self, prices: np.ndarray, positions: np.ndarray) -> np.ndarray:
+        """Cost paid at each date, shape `(m, n + 1)`. Sums to `amount` per path."""
+        prices, _pos, traded = _prepare(prices, positions)
+        impact = _rates(self.impact, prices.shape[-1], "impact")
+        return (impact * traded**2 * charge_basis(prices, self.unit)).sum(axis=2)
 
     def amount_torch(self, prices, positions, *, exact: bool = True):
         """Torch version of `amount`. `exact` is unused."""
