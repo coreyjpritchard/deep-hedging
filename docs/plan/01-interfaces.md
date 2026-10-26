@@ -193,7 +193,7 @@ class Environment:
 ```json
 {
   "schema": "deephedge.graph/v1",
-  "id": "sha256 prefix of the canonical JSON without this field",
+  "id": "a9a7694034a69b0d",
   "seeds": {"train": 0, "validation": 1, "test": 12345, "torch": 0},
   "nodes": {
     "mkt":  {"type": "generator.heston", "params": {"kappa": 1.0, "theta": 0.04, "xi": 2.0, "rho": -0.7, "v0": 0.04}},
@@ -211,6 +211,10 @@ class Environment:
   "run": {"m_train": 20000, "m_test": 20000, "n_steps": 30, "epochs": 100, "batch": 2000, "lr": 0.005}
 }
 ```
+
+`id` is the first 16 hex digits of the SHA-256 of the canonical JSON without the `id`
+field (keys sorted, edges sorted, no whitespace); `deephedge.spec` computes it and
+`validate` rejects a stored id that does not match the content.
 
 The registry maps `type` strings to classes and their parameter schemas. `validate`
 checks: every node type exists; parameter types and ranges; `feat.out_dim == h_net.n_in`;

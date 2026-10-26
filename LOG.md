@@ -9,6 +9,44 @@ That file is roadmap item 02. The box stays open until the session has been work
 File `sessions/02_cost_models.py` is the cost-model picture, not that question.
 **Next:** the same four hedgers under Heston, then under rough Bergomi with `roughvol`.
 
+## 2026-10-26 The lab starts: M00 checked, M01 graph spec and registry
+
+M00 is the merge of PRs 1 to 3, which landed on 11 October. Checked again on
+`main` at 05ab894: 71 tests pass, `ruff check` is clean, and `python -m
+deephedge.figures` reproduces every session 00 row of `docs/results.csv` to the
+printed six decimals (premium 2.287151; 50 bp delta entropic 1.543334, network
+1.051947). LOG.md has the entries for sessions 01, 02 and 03. One row moved on
+this machine: the session 02 fixed-charge network, scored with the exact
+indicator, gives mean -1.499432 and entropic 1.786564 against the committed
+-1.498475 and 1.785535. The README's 1.79 is unchanged. I have not confirmed why; the likely cause is a
+handful of trades near zero flipping in or out of the indicator under a
+different CPU's float arithmetic; the weights are the committed ones. The card's
+"97 tests" was PR 5's count, which includes the two open drafts; `main` has 71.
+
+M01 is `deephedge/spec.py` and `deephedge/registry.py`. A `deephedge.graph/v1`
+file parses into a frozen `GraphSpec` and writes back unchanged. Its `spec_id`
+is the first 16 hex digits of the SHA-256 of the canonical JSON without the
+`id`, with keys and edges sorted, so key order and edge order do not move it.
+`validate(spec)` returns a list of problems, empty when valid. It checks node
+types, parameter types and ranges, seeds (all four present, and train,
+validation and test pairwise distinct), edges, one node per single-use family,
+the instrument set against the generator, the state each feature reads, the
+feature width against a network's `n_in`, the instrument count against each
+hedger's `n_out` and each per-instrument cost, and a pricer for each classical
+hedger unless `run.mc_fallback` is on. It imports neither torch nor scipy and
+builds nothing; a subprocess test holds it to that.
+
+The blocks are stubs: a type name, a parameter schema and a `describe` method
+the validator reads. M02 to M08 and M11 replace them under the same names.
+`generator.rough_bergomi` is registered now with `H = 0.1` as the default (D5),
+so a rough Bergomi spec can be written and checked before the adapter exists.
+It reports no closed-form pricer, so a delta hedger on it needs
+`run.mc_fallback`. The Heston example in `docs/plan/01-interfaces.md` validates;
+its `id` placeholder is now the real id, `a9a7694034a69b0d`. The contract
+monitoring check is left to M03, because the only contract so far is a vanilla
+read at maturity. `docs/schema/graph-v1.json` is generated from the registry by
+`python -m deephedge.registry`, and a test fails if the two drift apart.
+
 ## 2026-10-22 Static figures, one results file, a lock file
 
 `python -m deephedge.figures` now scores every hedger from the cached weights on
