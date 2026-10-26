@@ -75,7 +75,7 @@ def test_quadrature_price_is_the_2019_call(impl):
 def test_cos_greeks_match_quadrature_at_inception(impl):
     """The pathwise COS hedge agrees with the quadrature at t = 0.
 
-    Default grid, 128 cosines. Price within 1e-3, delta within 2e-3,
+    Default grid, 512 cosines. Price within 1e-3, delta within 2e-3,
     vega within 0.2.
     """
     mkt = _paper(impl)
@@ -90,6 +90,44 @@ def test_cos_greeks_match_quadrature_at_inception(impl):
     slope = (1.0 - np.exp(-mkt.kappa * mkt.maturity)) / mkt.kappa
     np.testing.assert_allclose(bench[:, 0, 0], quad_delta, atol=2e-3)
     np.testing.assert_allclose(bench[:, 0, 1], quad_vega / slope, atol=2.0)
+
+
+@pytest.mark.parametrize(
+    "spot, variance, days",
+    [
+        (99.945, 0.0, 1),
+        (100.046, 0.0, 2),
+        (100.046, 0.0, 5),
+        (100.95445, 0.0, 15),
+        (100.0, 1e-4, 1),
+        (100.0, 1e-3, 3),
+        (98.0, 0.0, 10),
+    ],
+)
+def test_cos_delta_matches_quadrature_at_zero_variance(impl, spot, variance, days):
+    """Near expiry at zero variance the COS delta still matches the quadrature.
+
+    On the 2019 parameters the truncated variance is 0 on 45 per cent of hedging
+    dates. With a 0.3 floor on the truncation half-width, the delta one day out
+    at 99.945 was 0.38 against a quadrature 0.012. Delta within 2e-3, price
+    within 1e-4.
+    """
+    mkt = _paper(impl)
+    tau = days / 365
+    quad_price, quad_delta, _ = _paper(impl, s0=spot, v0=variance, maturity=tau).quad_greeks()
+    price, delta, _ = mkt.greeks(spot, variance, tau)
+    assert abs(float(delta) - quad_delta) < 2e-3
+    assert abs(float(price) - quad_price) < 1e-4
+
+
+def test_cos_deep_in_the_money_delta_at_zero_variance(impl):
+    """13% in the money, two days out, zero variance: delta is 1 to 1e-3.
+
+    The quadrature does not converge here, so the check is the bound. Twelve
+    standard deviations of truncation gave 0.998: the tails are fat at zero variance.
+    """
+    _, delta, _ = _paper(impl).greeks(113.184, 0.0, 2 / 365)
+    assert 0.999 < float(delta) <= 1.0 + 1e-6
 
 
 def test_price_matches_monte_carlo(impl):
