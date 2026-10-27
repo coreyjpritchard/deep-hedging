@@ -266,7 +266,7 @@ def _(mo):
     ## What the cost slider does
 
     At 100 bp the model hedge still holds the zero-cost greek weights, so
-    it pays to trade. Its mean P&L is $-2.79$ and its CVaR is $3.50$. The
+    it pays to trade. Its mean P&L is $-2.80$ and its CVaR is $3.52$. The
     network trained at 100 bp holds less of both instruments. Its mean is
     $-0.42$, its standard deviation $1.77$ and its CVaR $1.54$.
 
@@ -298,7 +298,7 @@ def _(mo):
                         "the swap."
                     ),
                     "2. Set the cost to 100 bp. Which book loses more?": mo.md(
-                        "The model hedge. Its mean P&L is -2.79 and its CVaR is 3.50, because "
+                        "The model hedge. Its mean P&L is -2.80 and its CVaR is 3.52, because "
                         "it keeps trading the zero-cost weights. The network trained at 100 bp "
                         "has mean -0.42 and CVaR 1.54. If the note above the figure says the "
                         "weights were trained at 0 bp, you are looking at the zero-cost network "

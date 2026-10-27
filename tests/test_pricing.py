@@ -246,9 +246,9 @@ def test_mc_price_along_and_greeks_match_black_scholes():
 def test_mc_delta_matches_heston_quadrature_delta():
     """Spot delta at fixed variance, two paths at two dates, against the quadrature delta.
 
-    The reference is the quadrature, not COS: one of these states has zero
-    variance 15 days out, where COS with 128 terms is 0.014 off (0.966 against
-    0.980). The swap column of the MC delta stays 0.
+    The reference is the quadrature, kept independent of the COS grid. (The
+    COS floor bug that used to miss by 0.014 here is fixed; see LOG.md, 26
+    October 2026.) The swap column of the MC delta stays 0.
     """
     generator = Heston(r=0.03)
     paths = generator.simulate(2, 2, seed=10)

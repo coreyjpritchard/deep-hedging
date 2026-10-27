@@ -9,6 +9,60 @@ That file is roadmap item 02. The box stays open until the session has been work
 File `sessions/02_cost_models.py` is the cost-model picture, not that question.
 **Next:** the same four hedgers under Heston, then under rough Bergomi with `roughvol`.
 
+## 2026-10-26 The Heston COS delta was wrong at zero variance; fixing it barely moves session 01
+
+What was wrong. `cos_call_greeks` put a floor of 0.3 on the half-width of the
+truncation interval in log price. Near expiry at zero variance the log price spreads by
+4e-4 to 6e-3, so the whole distribution sat inside a few of the 128 cosines and the
+delta came out wrong: one day out at spot 99.945 and zero variance it gave 0.38 where the
+quadrature gives 0.012. On 1,000 states drawn from the session 01 paths, against a
+reference COS (4,096 terms, 40 standard deviations, no floor, itself within 1e-5 of the
+quadrature on every state where the quadrature converges), the old delta error had
+mean 1.3e-2, 99th percentile 0.18 and maximum 0.35.
+
+The fix. The floor is now 1e-6 and the defaults are 512 terms and 20 standard
+deviations: delta error mean 5.8e-5, 99th percentile 5.9e-4, maximum 1.1e-3. Twelve
+standard deviations was not enough once the floor went: the zero-variance distribution
+has fat tails (vol of vol 2), and a deep in-the-money delta came out 0.998. The
+Black-Scholes limit (the variance path with vol of vol set to 0) is not a defensible
+substitute at zero variance: with vol of vol 2 the variance does not follow that path,
+and the limit gives a delta of 0.078 at spot 99.945 one day out (quadrature 0.012) and
+0.724 at 100.046 two days out (quadrature 0.945; the old COS gave 0.599, the new 0.945). Nor is the quadrature: it fails to converge
+on about 2.4 per cent of these states (a price below intrinsic, a delta above 1).
+States are now priced in chunks of 4,096, because 1,024 terms on 120,000 states at
+once ran the box out of memory.
+
+Session 01 rows of `docs/results.csv`, seed 12345, 20,000 paths, 30 steps, 0 bp:
+
+| row | mean | std | CVaR 50% | premium + CVaR |
+|---|---|---|---|---|
+| model hedge, before | -0.032256 | 0.402246 | 0.300559 | 1.992393 |
+| model hedge, after | -0.032902 | 0.402249 | 0.301270 | 1.993104 |
+| network, before and after | -0.012194 | 0.440656 | 0.305708 | 1.997542 |
+| delta in the spot only, before | -0.121249 | 1.559154 | 1.281836 | 2.973670 |
+| delta in the spot only, after | -0.121293 | 1.558941 | 1.281640 | 2.973474 |
+| premium, before and after | 1.691834 | | | |
+
+The model hedge got worse by 0.0007, a fifth of the bootstrap standard error of its
+CVaR (0.0035), so the network's shortfall against it narrows from 0.0051 to 0.0044. The
+network does not use the COS greeks, so its row is unchanged to the digit. Every
+two-decimal number in the README and in session 01 at zero cost is unchanged (1.99
+against 2.00, standard deviations 0.40, 0.44 and 1.56, CVaR 0.30, 0.31 and 1.28). On the
+sub-stepped check the model hedge scores 1.934251 on 480 steps (was 1.934003) and
+1.935830 on 1920 steps (was 1.935819); the network is unchanged at 1.970626 and
+1.975836. At 100 bp the model hedge moves from mean -2.79 and CVaR 3.50 to -2.80 and
+3.52, and session 01 now says so. The fixed-charge float32 row of session 02 was not
+touched.
+
+Why so little moves. The delta was wrong where it does not matter. Under full
+truncation Euler a state with zero variance has a spot step of exactly `mu dt`, which is
+0 here, so the number of shares held over that step earns nothing. The error only
+reaches the P&L through states with small positive variance and through the variance
+swap leg, whose weight is vega over the swap's slope.
+
+Cost. 512 terms instead of 128: the benchmark positions on the 20,000 session 01 paths
+take 160 seconds on the box instead of 42.
+
 ## 2026-10-26 M02a: paths, generators, pricers; the order changes; the fixed-charge drift
 
 **Order.** M01, then M02, then M11a (rough Bergomi only), ahead of M03 to M08. SABR
@@ -62,9 +116,10 @@ percentile is 0.18. The quadrature itself warns of slow convergence at a few
 states near expiry, so the size of the gap there is uncertain; where I checked
 with the Monte Carlo pricer it sided with the quadrature. More COS terms (1,024)
 help away from expiry but not near it. The Heston benchmark hedge in session 01
-uses that delta, so its numbers carry the error. Not fixed here: the
-fix (quadrature or the Black-Scholes limit when the variance is near zero) moves
-session 01's benchmark rows and needs its own entry.
+uses that delta, so its numbers carry the error. Fixed on main in the squash of
+PR #16 (merge 80b9017) and brought into this branch by merging main: the floor is
+1e-6, defaults are 512 terms and 20 standard deviations, and session 01's model
+hedge premium plus CVaR moves from 1.992393 to 1.993104. See the entry above.
 
 Left for M02b: `Environment.pnl_torch` and `Environment.ledger`, and moving every
 P&L in `hedging`, `train`, `band` and `export` onto them, with session 00 reproduced

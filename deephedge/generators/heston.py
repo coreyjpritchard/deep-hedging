@@ -86,11 +86,23 @@ from deephedge.pricing import PriceResult, bs_call_delta, bs_call_price
 __all__ = [
     "Heston",
     "HestonPricer",
+    "N_COS",
+    "TRUNCATION",
     "cos_call_greeks",
     "d_variance_swap_dv",
     "heston_call_quad",
     "variance_swap_leg",
 ]
+
+
+# COS defaults, chosen against the quadrature on the 2019 parameters (LOG.md,
+# 26 October 2026): on 1,000 states from 30-step paths the delta is within
+# 1.1e-3 of a 4,096-term reference, and the reference within 1e-5 of the
+# quadrature wherever the quadrature converges.
+N_COS = 512
+TRUNCATION = 20.0
+_MIN_HALF_WIDTH = 1e-6
+_COS_CHUNK = 4_096
 
 
 def d_variance_swap_dv(tau, kappa: float):
@@ -166,8 +178,9 @@ def heston_call_quad(
 
     Vega is `d(price)/d(variance)`. `xi = 0` returns the Black-Scholes
     values with total variance `L`. Used for the premium and for checks.
-    The pathwise hedge uses `cos_call_greeks`, which agrees with this to
-    well under a tenth of a volatility point on the 2019 parameters.
+    The pathwise hedge uses `cos_call_greeks`. Near expiry at zero variance
+    this quadrature can fail to converge (scipy warns, and the price can come
+    out below intrinsic); the COS expansion does not have that problem.
     """
     if xi == 0.0:
         price, delta, vega = _black_scholes_from_variance(
@@ -270,51 +283,11 @@ def _cumulants(spot, variance, tau, kappa, theta, xi, rho, r):
     return c1, c2
 
 
-def cos_call_greeks(
-    spot,
-    variance,
-    tau,
-    strike: float,
-    kappa: float,
-    theta: float,
-    xi: float,
-    rho: float,
-    r: float,
-    n_cos: int = 128,
-    truncation: float = 12.0,
-):
-    """Call price, delta and vega on the COS grid. Vectorised in the inputs.
-
-    The truncation interval is `c1 ± L sqrt(max(c2, 0))`, and at least
-    `0.3` wide in log price, so a variance sitting on the truncation floor
-    still sees the strike. Delta and vega differentiate the characteristic
-    function and hold that interval fixed. `xi = 0` is Black-Scholes.
-    """
-    spot = np.asarray(spot, dtype=float).ravel()
-    variance = np.maximum(np.asarray(variance, dtype=float).ravel(), 0.0)
-    tau = np.asarray(tau, dtype=float).ravel()
-    if spot.shape != variance.shape or spot.shape != tau.shape:
-        raise ValueError("spot, variance and tau must share a shape")
-    if xi == 0.0:
-        return _black_scholes_from_variance(spot, variance, tau, strike, kappa, theta, r)
-
-    m = spot.size
-    price = np.empty(m)
-    delta = np.empty(m)
-    vega = np.empty(m)
-    alive = tau > 0
-    price[~alive] = np.maximum(spot[~alive] - strike, 0.0)
-    delta[~alive] = (spot[~alive] > strike).astype(float)
-    vega[~alive] = 0.0
-    if not np.any(alive):
-        return price, delta, vega
-
-    s = spot[alive]
-    v = variance[alive]
-    t = tau[alive]
+def _cos_chunk(s, v, t, strike, kappa, theta, xi, rho, r, n_cos, truncation):
+    """COS price, delta and vega for live states `s, v, t`, each `(p,)`."""
     n_alive = s.size
     c1, c2 = _cumulants(s, v, t, kappa, theta, xi, rho, r)
-    half = np.maximum(truncation * np.sqrt(np.maximum(c2, 0.0)), 0.3)
+    half = np.maximum(truncation * np.sqrt(np.maximum(c2, 0.0)), _MIN_HALF_WIDTH)
     lower = c1 - half
     upper = c1 + half
     k = np.arange(n_cos)[:, None]
@@ -347,10 +320,76 @@ def cos_call_greeks(
     weights[0] = 0.5
     discount = np.exp(-r * t)
     weighted = weights[:, None] * payoff_coef
-    price[alive] = discount * np.sum(np.real(series) * weighted, axis=0)
+    price = discount * np.sum(np.real(series) * weighted, axis=0)
     d_series_spot = (1j * frequency / s[None, :]) * series
-    delta[alive] = discount * np.sum(np.real(d_series_spot) * weighted, axis=0)
-    vega[alive] = discount * np.sum(np.real(capital_d * series) * weighted, axis=0)
+    delta = discount * np.sum(np.real(d_series_spot) * weighted, axis=0)
+    vega = discount * np.sum(np.real(capital_d * series) * weighted, axis=0)
+    return price, delta, vega
+
+
+def cos_call_greeks(
+    spot,
+    variance,
+    tau,
+    strike: float,
+    kappa: float,
+    theta: float,
+    xi: float,
+    rho: float,
+    r: float,
+    n_cos: int = N_COS,
+    truncation: float = TRUNCATION,
+):
+    """Call price, delta and vega on the COS grid. Vectorised in the inputs.
+
+    The truncation interval is `c1 ± L sqrt(max(c2, 0))` in log price, with
+    `L = truncation`. Delta and vega differentiate the characteristic
+    function and hold that interval fixed. `xi = 0` is Black-Scholes. States
+    are priced in chunks of `_COS_CHUNK`, so memory stays bounded.
+
+    Until 26 October 2026 the half-width had a floor of 0.3 in log price.
+    When the variance is at or near 0 close to expiry the log price spreads
+    by a few 1e-4, so that floor put the whole distribution inside a handful
+    of cosine terms and the delta was badly wrong (0.38 against 0.012 one day
+    out, just below the strike, at zero variance). The floor is now 1e-6, and
+    with it the defaults are 512 terms and 20 standard deviations: the
+    distribution at zero variance has fat tails, and 12 standard deviations
+    missed about 0.2% of it, which shows as a deep in-the-money delta of 0.998.
+    """
+    spot = np.asarray(spot, dtype=float).ravel()
+    variance = np.maximum(np.asarray(variance, dtype=float).ravel(), 0.0)
+    tau = np.asarray(tau, dtype=float).ravel()
+    if spot.shape != variance.shape or spot.shape != tau.shape:
+        raise ValueError("spot, variance and tau must share a shape")
+    if xi == 0.0:
+        return _black_scholes_from_variance(spot, variance, tau, strike, kappa, theta, r)
+
+    m = spot.size
+    price = np.empty(m)
+    delta = np.empty(m)
+    vega = np.empty(m)
+    alive = tau > 0
+    price[~alive] = np.maximum(spot[~alive] - strike, 0.0)
+    delta[~alive] = (spot[~alive] > strike).astype(float)
+    vega[~alive] = 0.0
+    if not np.any(alive):
+        return price, delta, vega
+
+    for lo in range(0, int(alive.sum()), _COS_CHUNK):
+        rows = np.flatnonzero(alive)[lo : lo + _COS_CHUNK]
+        price[rows], delta[rows], vega[rows] = _cos_chunk(
+            spot[rows],
+            variance[rows],
+            tau[rows],
+            strike,
+            kappa,
+            theta,
+            xi,
+            rho,
+            r,
+            n_cos,
+            truncation,
+        )
     return price, delta, vega
 
 
@@ -364,8 +403,8 @@ class Heston(Market):
 
     `n_cos` and `truncation` set the COS grid behind `price_along` and
     `benchmark_positions`. The premium is the quadrature price, not the
-    COS price. On the 2019 parameters with `n_cos = 128` the two differ
-    by about `5e-5` at inception.
+    COS price. On the 2019 parameters with the defaults (`n_cos = 512`,
+    `truncation = 20`) the two agree to about 1e-6 at inception.
 
     The strike is kept for the deprecated `Market` interface. The generator
     parameters, `params()`, leave it out.
@@ -388,8 +427,8 @@ class Heston(Market):
         v0: float = 0.04,
         kappa_sim: float | None = None,
         theta_sim: float | None = None,
-        n_cos: int = 128,
-        truncation: float = 12.0,
+        n_cos: int = N_COS,
+        truncation: float = TRUNCATION,
     ):
         self.s0 = float(s0)
         self.strike = float(strike)
