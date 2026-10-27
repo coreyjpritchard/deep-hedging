@@ -179,7 +179,8 @@ tests and acceptance criteria are in `docs/plan/02-modules.md`.
 | M08 | Classical hedgers as policies (`deephedge/classical.py`) | M02, M05 |
 | M09 | Engine: compile, train, run store (`deephedge/engine.py`, `runs/`) | M01 to M08 |
 | M10 | Evaluator: side-by-side report, paired bootstrap, cross-environment matrix | M09 |
-| M11 | Generators: rough Bergomi (roughvol) and SABR | M02 |
+| M11a | Generator: rough Bergomi (roughvol, tag v0.1.0), pulled forward after M02 | M02 |
+| M11b | Generator: SABR | M02 |
 | M12 | Generators: regime-switching Bergomi (volsurface) with regime features and variance-swap instrument | M02, M06 |
 | M13 | Generators: local vol from a surface, and the calibrated SPX surface route | M02 |
 | M14 | Generators: uploads (paths CSV, block bootstrap, user `.py`), from PR 4 | M02 |
@@ -190,14 +191,14 @@ tests and acceptance criteria are in `docs/plan/02-modules.md`.
 | M19 | Paper SPX hedger from daily IBKR snapshots (no orders) | M13, M09 |
 | M20 | Web canvas (React Flow + FastAPI), deferred (D1): reconsidered after M10 lands | M09, M10 |
 
-Module count: 21 entries including M00; 20 build modules.
+Module count: 22 entries including M00; 21 build modules (M11 is split into M11a and M11b).
 
 ### Dependency order and parallelism
 
 ```
 M00
  +-- M01 --+- M02 --+- M03
-          |        +-- M11 -+
+          |        +-- M11a/b +
           |        +-- M13  |
           |        +-- M14  |
           +-- M04           |
@@ -214,8 +215,8 @@ M00
 Waves (at most three modules in flight at once, so reviews keep up):
 
 1. M00, then M01 alone (everything imports it).
-2. M02, M04, M05, M07 in parallel (four, but M04 and M07 are small).
-3. M03, M06, M08, M11, M14 in parallel (pick three at a time).
+2. M02, then M11a (rough Bergomi), decided 26 October 2026; then M04, M05, M07.
+3. M03, M06, M08, M11b, M14 in parallel (pick three at a time).
 4. M09 alone (integration), then M10.
 5. M12, M13, M15, M17 in parallel.
 6. M16, M18, M19.

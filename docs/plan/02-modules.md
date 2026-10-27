@@ -8,6 +8,12 @@ no change to files outside the card's "touches" list without a note in the PR bo
 Sizing: "S" under 600 added lines, "M" 600 to 1,500, "L" 1,500 to 2,500. Nothing above L;
 split if it grows.
 
+Order, decided 26 October 2026: M01, then M02, then M11a (rough Bergomi only), ahead of
+M03 to M08. SABR is M11b and keeps its place in wave 3. Rough Bergomi is the question the
+lab exists to ask, so it comes as soon as there is a generator interface to put it
+behind. M02 is built in two PRs: M02a (paths, protocols, generators, pricers) and M02b
+(the environment's P&L, torch P&L and ledger as the only P&L functions).
+
 ---
 
 ## M00 Merge the stack (PRs 1, 2, 3)
@@ -198,11 +204,31 @@ split if it grows.
   cross-environment matrix for Black-Scholes and Heston with delta and a network matches
   PR 4's default picture in direction (network better in sample, worse on Heston).
 
-## M11 Generators: rough Bergomi and SABR
+## M11a Generator: rough Bergomi (pulled forward, straight after M02)
+
+- Size: M.
+- Touches: new `deephedge/generators/rbergomi.py`, `pyproject.toml` extra `[rough]`
+  pinning `rough-volatility` to the tag `v0.1.0` (commit 65f3f99), tests.
+- Inputs, outputs, tests and acceptance: the rough Bergomi half of the card below.
+- Benchmark hedge: the Black-Scholes delta at the current volatility, `sqrt(v_t)` from
+  the variance state, with the time left to maturity. It is cheap and has no Monte Carlo
+  error; the conditional Monte Carlo delta from `price_with_error` is a later option, not
+  the benchmark.
+- Until M03 to M08 land, the contract is the M02 vanilla call and the hedgers are the
+  ones PR 1 has; the session 04 spec waits for M09.
+
+## M11b Generator: SABR
+
+- Size: S.
+- Touches: new `deephedge/generators/sabr.py`, tests.
+- Inputs, outputs, tests and acceptance: the SABR half of the card below. Wave 3, as
+  before.
+
+## M11 Generators: rough Bergomi and SABR (the original card, now M11a and M11b)
 
 - Size: M.
 - Touches: new `deephedge/generators/rbergomi.py`, `generators/sabr.py`,
-  `pyproject.toml` extra `[rough]` pinning `rough-volatility` by sha, tests.
+  `pyproject.toml` extra `[rough]` pinning `rough-volatility` (tag `v0.1.0`), tests.
 - Inputs: `roughvol.rbergomi.RoughBergomi(H, nu, rho, xi0).simulate(m, times, seed)`
   returning `Z (m, n+1)` and `state["v"]`; optional `state["xi"]` with `xi_tenors`.
 - Outputs: `RoughBergomi` generator (spot `forward * Z`, variance state, forward

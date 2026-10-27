@@ -63,6 +63,106 @@ swap leg, whose weight is vega over the swap's slope.
 Cost. 512 terms instead of 128: the benchmark positions on the 20,000 session 01 paths
 take 160 seconds on the box instead of 42.
 
+## 2026-10-26 M02a: paths, generators, pricers; the order changes; the fixed-charge drift
+
+**Order.** M01, then M02, then M11a (rough Bergomi only), ahead of M03 to M08. SABR
+becomes M11b and stays in wave 3. The rough Bergomi benchmark hedge is the
+Black-Scholes delta at the current volatility, `sqrt(v_t)`: cheap and free of Monte
+Carlo error. `rough-volatility` is tagged `v0.1.0` at 65f3f99, and the `[rough]`
+extra will pin that tag. Recorded in `docs/plan/02-modules.md` and `PLAN.md`.
+
+**The fixed-charge drift, explained.** The session 02 fixed-charge network row moves
+in the third decimal between machines (entropic 1.786564 here, 1.785535 committed)
+with the same code, weights and package versions. It is not threads, not the ATen
+CPU path and not oneDNN: it moves only with MKL's single-precision matrix kernels.
+Forcing them on this machine gives 1.786564 (AVX-512, the default), 1.786555
+(AVX2), 1.784779 (SSE4.2) and 1.785005 (`MKL_CBWR=COMPATIBLE`); the committed
+value lies inside that spread. The mechanism is the exact trade indicator on a
+float32 rollout. Of 620,000 position slots, 601,552 trade, and 243,841 of those
+trades are smaller than 1e-6 in absolute size, dust that still pays the full 0.05.
+Between the AVX-512 and the compatible kernels the positions differ by at most
+2.1e-5, yet 22,350 indicators flip (484 fewer trades net), which is the 0.001.
+`docs/results.csv` is not regenerated: the row is reproducible to two or three
+decimals, and the README's 1.79 holds. The fix belongs with the cost and engine
+work (M04, M17): score the rollout in float64 or with a documented trade
+threshold, and record the machine and BLAS next to each row.
+
+**M02a.** `deephedge/paths.py` holds `Paths`, now with named `state`,
+`instrument_names`, `feature_names` and `source`, all validated, and a `to_torch`.
+`deephedge/generators/` holds the `Generator` and `Pricer` protocols, the
+deprecated `Market` base, `BlackScholes` and `Heston` (moved from `env.py` and
+`heston.py`, which re-export them). Both are generators now: a `name`, state names,
+`params()` without the strike (that belongs to the contract) which validate against
+the M01 schemas, `simulate_from` for restarting under the pricing measure, and
+`pricer()`. `deephedge/pricing.py` has the Black-Scholes formulas and
+`MonteCarloPricer`: nested simulation from each path's state, central-difference
+delta and gamma with common random numbers, a standard error on everything, and a
+cache on an explicit key. `deephedge/contracts.py` has a vanilla call and put, the
+minimum the pricers need until M03. Heston paths are bit for bit what they were.
+
+What the checks said. On 20,000 inner paths the Monte Carlo premium sits within
+1.2 SE of the closed form for Black-Scholes and Heston, calls and puts (seed 7). The
+first Heston delta check failed at 4 SE with a 1% spot bump: on the 2019
+parameters the price is curved enough that the central difference is biased by
+about 4 SE, so the default bump is 0.2%. The second failure was more
+interesting: at zero variance the COS delta is wrong. With 128 terms it is 0.966
+where the quadrature and the Monte Carlo pricer both give 0.980, 15 days out;
+one day out and just below the strike COS gives 0.38 against a quadrature 0.01.
+On the 2019 parameters 47% of hedging states have the truncated variance at 0
+(Feller is violated). On 1,000 random states from 1,000 paths by 30 dates the mean
+absolute gap between the COS and the quadrature delta is 0.013 (0.025 at zero
+variance, 0.002 elsewhere), 28% of states are more than 0.01 apart, and the 99th
+percentile is 0.18. The quadrature itself warns of slow convergence at a few
+states near expiry, so the size of the gap there is uncertain; where I checked
+with the Monte Carlo pricer it sided with the quadrature. More COS terms (1,024)
+help away from expiry but not near it. The Heston benchmark hedge in session 01
+uses that delta, so its numbers carry the error. Fixed on main in the squash of
+PR #16 (merge 80b9017) and brought into this branch by merging main: the floor is
+1e-6, defaults are 512 terms and 20 standard deviations, and session 01's model
+hedge premium plus CVaR moves from 1.992393 to 1.993104. See the entry above.
+
+Left for M02b: `Environment.pnl_torch` and `Environment.ledger`, and moving every
+P&L in `hedging`, `train`, `band` and `export` onto them, with session 00 reproduced
+through `Environment.pnl`.
+
+## 2026-10-26 The lab starts: M00 checked, M01 graph spec and registry
+
+M00 is the merge of PRs 1 to 3, which landed on 11 October. Checked again on
+`main` at 05ab894: 71 tests pass, `ruff check` is clean, and `python -m
+deephedge.figures` reproduces every session 00 row of `docs/results.csv` to the
+printed six decimals (premium 2.287151; 50 bp delta entropic 1.543334, network
+1.051947). LOG.md has the entries for sessions 01, 02 and 03. One row moved on
+this machine: the session 02 fixed-charge network, scored with the exact
+indicator, gives mean -1.499432 and entropic 1.786564 against the committed
+-1.498475 and 1.785535. The README's 1.79 is unchanged. I have not confirmed why; the likely cause is a
+handful of trades near zero flipping in or out of the indicator under a
+different CPU's float arithmetic; the weights are the committed ones. The card's
+"97 tests" was PR 5's count, which includes the two open drafts; `main` has 71.
+
+M01 is `deephedge/spec.py` and `deephedge/registry.py`. A `deephedge.graph/v1`
+file parses into a frozen `GraphSpec` and writes back unchanged. Its `spec_id`
+is the first 16 hex digits of the SHA-256 of the canonical JSON without the
+`id`, with keys and edges sorted, so key order and edge order do not move it.
+`validate(spec)` returns a list of problems, empty when valid. It checks node
+types, parameter types and ranges, seeds (all four present, and train,
+validation and test pairwise distinct), edges, one node per single-use family,
+the instrument set against the generator, the state each feature reads, the
+feature width against a network's `n_in`, the instrument count against each
+hedger's `n_out` and each per-instrument cost, and a pricer for each classical
+hedger unless `run.mc_fallback` is on. It imports neither torch nor scipy and
+builds nothing; a subprocess test holds it to that.
+
+The blocks are stubs: a type name, a parameter schema and a `describe` method
+the validator reads. M02 to M08 and M11 replace them under the same names.
+`generator.rough_bergomi` is registered now with `H = 0.1` as the default (D5),
+so a rough Bergomi spec can be written and checked before the adapter exists.
+It reports no closed-form pricer, so a delta hedger on it needs
+`run.mc_fallback`. The Heston example in `docs/plan/01-interfaces.md` validates;
+its `id` placeholder is now the real id, `a9a7694034a69b0d`. The contract
+monitoring check is left to M03, because the only contract so far is a vanilla
+read at maturity. `docs/schema/graph-v1.json` is generated from the registry by
+`python -m deephedge.registry`, and a test fails if the two drift apart.
+
 ## 2026-10-22 Static figures, one results file, a lock file
 
 `python -m deephedge.figures` now scores every hedger from the cached weights on
