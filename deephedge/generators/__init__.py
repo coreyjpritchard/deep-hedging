@@ -16,3 +16,10 @@ __all__ = [
     "Market",
     "Pricer",
 ]
+
+try:
+    from deephedge.generators.rbergomi import RoughBergomi, RoughBergomiPricer, rbergomi_nu
+
+    __all__ += ["RoughBergomi", "RoughBergomiPricer", "rbergomi_nu"]
+except ImportError:
+    pass

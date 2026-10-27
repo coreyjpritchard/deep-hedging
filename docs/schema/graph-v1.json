@@ -430,10 +430,27 @@
                     "exclusiveMinimum": 0.0,
                     "description": "years"
                   },
+                  "mu": {
+                    "type": "number",
+                    "description": "drift of the simulation measure"
+                  },
+                  "n_price_paths": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "description": "paths for price_with_error"
+                  },
                   "nu": {
                     "type": "number",
                     "minimum": 0.0,
                     "description": "annual vol of vol"
+                  },
+                  "price_seed": {
+                    "type": "integer",
+                    "description": "seed for price_with_error"
+                  },
+                  "r": {
+                    "type": "number",
+                    "description": "risk-free rate, continuously compounded"
                   },
                   "rho": {
                     "type": "number",

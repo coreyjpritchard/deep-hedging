@@ -9,6 +9,27 @@ That file is roadmap item 02. The box stays open until the session has been work
 File `sessions/02_cost_models.py` is the cost-model picture, not that question.
 **Next:** the same four hedgers under Heston, then under rough Bergomi with `roughvol`.
 
+
+## 2026-10-27 M11a: rough Bergomi adapter over roughvol v0.1.0
+
+`deephedge/generators/rbergomi.py` wraps `roughvol.rbergomi.RoughBergomi` at tag
+`v0.1.0` (65f3f99). The `[rough]` extra pins that tag. Spot is `s0 * exp(r t) * Z`,
+variance and the forward-variance curve sit in path state, and the second instrument
+is the variance-swap mark from `roughvol.rbergomi.variance_swap`. Prices come from
+`price_with_error` with a standard error. The classical benchmark is the
+Black-Scholes delta at `sqrt(v_t)` (no Monte Carlo greek). `rbergomi_nu` forwards the
+per-day to annual conversion. The registry stub keeps `validate` free of torch and
+scipy; `__new__` builds the real adapter when the extra is installed, and
+`has_pricer` is true so classical delta-vega needs no `mc_fallback`.
+
+Acceptance on this box. Lab preset `H = 0.1, nu = 1.5, rho = -0.7, xi0 = 0.04`
+simulates 20,000 by 30 in 1.72 s (limit 30 s). Spot martingale holds at four SE.
+Conditional MC ATM 30-day call premium 2.135707 (SE 0.014424) on 10,000 price paths.
+Under 50 bp proportional cost on the spot (zero on the swap), the BS-delta benchmark
+on 20,000 paths has mean P&L -1.705 and CVaR at 0.5 of -2.364; do-nothing has mean
+near zero and CVaR at 0.5 of -2.099. So the classical hedge does not beat do-nothing
+under that cost. No network comparison yet: session 04 waits for M09. 167 tests.
+
 ## 2026-10-26 M02b: one P&L in numpy, one in torch, and a ledger
 
 `Environment.pnl` and `Environment.pnl_torch` now hold the only terminal P&L
