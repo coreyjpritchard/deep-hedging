@@ -93,11 +93,33 @@ class MonteCarloPricer:
     grid (the default, 1/5840 of a year, is 16 steps a day, 480 steps on 30
     days). A generator with `exact_simulation = True` (Black-Scholes) is
     stepped once to the horizon instead, since a terminal payoff needs only
-    the terminal spot. `bump` is the relative spot bump for delta and gamma.
-    The default, 0.2%, keeps the central-difference bias below the Monte
-    Carlo error on the 2019 Heston parameters, where a 1% bump biases the
-    delta by about 4 standard errors at 20 000 inner paths; gamma's error
-    grows as `1 / bump`. `seed`
+    the terminal spot. `bump` is the relative spot bump `h`, one for delta
+    and gamma: delta is `(V(S(1 + h)) - V(S(1 - h))) / (2 h S)` and gamma
+    `(V(S(1 + h)) - 2 V(S) + V(S(1 - h))) / (h S)^2`, on common random numbers.
+
+    The bump trades bias for noise, and delta and gamma want different `h`.
+    The central-difference bias falls like `h^2`. The noise of delta hardly
+    depends on `h`, but gamma's grows as `h` shrinks: with common random
+    numbers the second difference of a call payoff is nonzero only on inner
+    paths that end within `h S` of the strike, a fraction of order `h`, each
+    contributing order `1 / (h S)`, so gamma's standard error grows like
+    `h^(-1/2)`. Measured at inception on 20 000 inner paths, seed 0 (26
+    October 2026):
+
+    * Black-Scholes, sigma 0.2, 30 days at the money (closed-form gamma
+      0.0695): gamma standard error 0.0035 at `h = 0.2%`, 0.0021 at 0.5%,
+      0.0014 at 1%, about 5%, 3% and 2% of the gamma. Delta standard error
+      0.0035 to 0.0037 at all three.
+    * Heston, the 2019 parameters: a 1% bump moves the delta from 0.692 to
+      0.682, about 3 standard errors of 0.0033; at 0.2% the gamma standard
+      error is 0.0042, 4% of a gamma of 0.11.
+
+    The default, 0.2%, is chosen for delta, which is what the hedges use: its
+    bias is below the Monte Carlo error. Gamma is then noisier than it need
+    be, by a factor of about 2.4 against a 1% bump. A caller that needs a
+    clean gamma (a gamma hedge, a Whalley-Wilmott band width) should build a
+    second pricer with a larger bump, or more inner paths: the standard error
+    falls like `1 / sqrt(n_inner)`. `seed`
     fixes every inner draw: date `k` uses a child seed of `(seed, k)`, and
     the bumped valuations at that date reuse it. `max_floats` bounds the
     inner array, by splitting the outer paths into chunks.

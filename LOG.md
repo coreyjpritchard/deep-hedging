@@ -9,6 +9,37 @@ That file is roadmap item 02. The box stays open until the session has been work
 File `sessions/02_cost_models.py` is the cost-model picture, not that question.
 **Next:** the same four hedgers under Heston, then under rough Bergomi with `roughvol`.
 
+## 2026-10-26 M02b: one P&L in numpy, one in torch, and a ledger
+
+`Environment.pnl` and `Environment.pnl_torch` now hold the only terminal P&L
+arithmetic in the package. `terminal_pnl`, `pnl_from_positions` and
+`pnl_from_positions_torch` are aliases that build `Environment(None, cost)` and call
+them; `train.py` calls `pnl_torch` directly; `band.py`, `export.py` and `figures.py`
+already went through `pnl`. An environment without a market is for array-level
+scoring, so it needs the premium and the payoff passed in. The one-instrument rate
+branch of the torch P&L keeps its PR 2 summation order, so a float32 training run
+sums as before.
+
+`Environment.ledger` is the same book date by date: positions, signed trades, cost
+paid, gains, cash, holdings and value, in time-0 money. Its last value is the P&L,
+and before maturity the value is cash plus holdings. It needs a cost model that
+splits its charge by date, so the three cost models gained `per_date`; their
+`amount` is unchanged, so no published number moves.
+
+Checks. On two instruments (spot, variance swap) at `r = mu = 0.03`, under five cost
+models including the fixed charge with positions held still, the torch P&L in float64
+equals the numpy P&L to 1e-10, from `Paths` or from tensors, and the ledger's final
+value equals the P&L to 1e-10. Every session 00 row of `docs/results.csv` is
+reproduced through `Environment.pnl` to the printed six decimals. 148 tests.
+
+The 0.2% spot bump stays for delta and gamma. Measured at inception on 20,000 inner
+paths, gamma's standard error grows as the bump shrinks, like `h^(-1/2)` and not
+`1 / h` as the M02a docstring said: for an at-the-money 30-day Black-Scholes call it
+is 0.0035 at 0.2% and 0.0014 at 1%, against a gamma of 0.0695, while delta's is about 0.0036
+at both. A 1% bump moves the Heston delta by about 3 standard errors. So the default
+suits delta, and a caller that needs a clean gamma should use a second pricer with a
+larger bump. The `MonteCarloPricer` docstring says so.
+
 ## 2026-10-26 The Heston COS delta was wrong at zero variance; fixing it barely moves session 01
 
 What was wrong. `cos_call_greeks` put a floor of 0.3 on the half-width of the
