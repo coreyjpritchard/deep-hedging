@@ -231,9 +231,37 @@ def test_instrument_the_generator_does_not_offer(example):
 
 
 def test_classical_hedger_without_pricer_needs_mc_fallback(example):
+    """A generator that reports no closed-form pricer needs `run.mc_fallback`."""
+    from deephedge.registry import BlackScholesStub
+
+    original = BlackScholesStub.describe
+
+    @classmethod
+    def priceless(cls, params, **context):
+        return {"instruments": ("spot",), "state": (), "has_pricer": False}
+
+    BlackScholesStub.describe = priceless
+    try:
+        example["nodes"]["mkt"] = {"type": "generator.black_scholes", "params": {"sigma": 0.2}}
+        example["nodes"]["ins"]["params"]["names"] = ["spot"]
+        example["nodes"]["cost"]["params"]["rate"] = 0.005
+        example["nodes"]["feat"]["params"]["blocks"] = [
+            "time",
+            "log_moneyness",
+            "prev_position",
+        ]
+        example["nodes"]["h_delta"] = {"type": "hedger.delta"}
+        only(example, "nodes.h_delta", "run.mc_fallback")
+        example["run"]["mc_fallback"] = True
+        assert problems(example) == []
+    finally:
+        BlackScholesStub.describe = original
+
+
+def test_rough_bergomi_classical_delta_needs_no_mc_fallback(example):
+    """M11a: the BS-at-current-vol greek counts as a pricer for the validator."""
     example["nodes"]["mkt"] = {"type": "generator.rough_bergomi", "params": {}}
-    only(example, "nodes.h_delta", "run.mc_fallback")
-    example["run"]["mc_fallback"] = True
+    example["run"]["mc_fallback"] = False
     assert problems(example) == []
 
 

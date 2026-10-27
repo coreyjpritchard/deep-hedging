@@ -431,30 +431,42 @@ class HestonStub(Block):
 
 
 class RoughBergomiStub(Block):
-    """`generator.rough_bergomi`: adapter over `roughvol.rbergomi.RoughBergomi` (M11).
+    """`generator.rough_bergomi`: adapter over `roughvol.rbergomi.RoughBergomi` (M11a).
 
-    `H` defaults to 0.1 and is adjustable (D5). `nu` is the annual rough
-    Bergomi vol of vol. An estimate per trading day converts as
-    `nu = nu_per_day * 252**H / sqrt(2 H c_H)` (`roughvol.estimate.rbergomi_nu`).
-    Option prices are conditional Monte Carlo with a standard error, not a
-    closed form, so a classical hedger on this generator needs
-    `run.mc_fallback` until M11 settles its greeks.
+    Replaced at registry build time by `deephedge.generators.rbergomi.RoughBergomi`
+    when the `[rough]` extra is installed; this stub keeps `validate` working
+    without it. `H` defaults to 0.1 (D5). `nu` is the annual vol of vol; a
+    per-day estimate converts with `roughvol.estimate.rbergomi_nu`. Prices are
+    conditional Monte Carlo with a standard error; the classical benchmark
+    greek is the Black-Scholes delta at `sqrt(v_t)`, so `has_pricer` is true.
     """
 
     param_schema = {
-        "s0": _MARKET["s0"],
-        "maturity": _MARKET["maturity"],
+        **_MARKET,
         "H": _num(0.1, 0.0, 1.0, open_lower=True, open_upper=True, doc="Hurst exponent"),
         "nu": _num(1.5, 0.0, doc="annual vol of vol"),
         "rho": _num(-0.7, -1.0, 0.0),
         "xi0": _num(0.04, **_POSITIVE, doc="flat initial forward variance"),
         "xi_tenors": Param("floats", None, lower=0.0, open_lower=True),
+        "n_price_paths": Param("int", 4_000, lower=2, doc="paths for price_with_error"),
+        "price_seed": Param("int", 0, doc="seed for price_with_error"),
     }
+
+    def __new__(cls, **params):
+        try:
+            from deephedge.generators.rbergomi import RoughBergomi
+        except ImportError:
+            return super().__new__(cls)
+        return RoughBergomi(**params)
 
     @classmethod
     def describe(cls, params, **context):
-        state = ("variance", "xi") if params.get("xi_tenors") else ("variance",)
-        return {"instruments": ("spot", "variance_swap"), "state": state, "has_pricer": False}
+        del params, context
+        return {
+            "instruments": ("spot", "variance_swap"),
+            "state": ("variance", "xi"),
+            "has_pricer": True,
+        }
 
 
 # ---- contract, instruments, cost ------------------------------------------------
@@ -661,7 +673,12 @@ STUBS: dict[str, type[Block]] = {
 
 
 def default_registry() -> Registry:
-    """A fresh registry with every type known so far."""
+    """A fresh registry with every type known so far.
+
+    Stubs only: `validate` must not import torch or a simulator. Building
+    `generator.rough_bergomi` returns the real adapter when `[rough]` is
+    installed (see `RoughBergomiStub.__new__`).
+    """
     registry = Registry()
     for name, cls in STUBS.items():
         registry.register(name, cls)
