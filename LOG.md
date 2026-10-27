@@ -7,7 +7,10 @@ sit on the environment, costs are pluggable, and the Whalley-Wilmott band is
 compared with the learned hedge on Black-Scholes in `sessions/03_whalley_wilmott.py`.
 That file is roadmap item 02. The box stays open until the session has been worked through.
 File `sessions/02_cost_models.py` is the cost-model picture, not that question.
-**Next:** the same four hedgers under Heston, then under rough Bergomi with `roughvol`.
+**Next:** M03 instruments and listed options, then M04 costs (session 04 under rough
+Bergomi waits for M09). The rough Bergomi generator is on main as M11a; its published
+benchmark is the Black-Scholes delta at `sqrt(v_t)`, which loses to not hedging at 50 bp
+(see the M11a entry).
 
 
 ## 2026-10-27 M11a: rough Bergomi adapter over roughvol v0.1.0
