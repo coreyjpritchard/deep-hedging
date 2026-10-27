@@ -417,8 +417,8 @@ class HestonStub(Block):
         "v0": _num(0.04, 0.0),
         "kappa_sim": _num(None, **_POSITIVE, doc="simulation kappa; unset means kappa"),
         "theta_sim": _num(None, 0.0, doc="simulation theta; unset means theta"),
-        "n_cos": Param("int", 128, lower=16, doc="COS terms along a path"),
-        "truncation": _num(12.0, **_POSITIVE, doc="COS range in standard deviations"),
+        "n_cos": Param("int", 512, lower=16, doc="COS terms along a path"),
+        "truncation": _num(20.0, **_POSITIVE, doc="COS range in standard deviations"),
     }
 
     @classmethod
