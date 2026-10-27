@@ -8,7 +8,8 @@ simulated paths). At 200 bp it beats the Whalley-Wilmott asymptotic band, 3.35 a
 A neural network is trained end to end on simulated paths to minimise a convex risk
 measure of the hedged P&L of a short call, as in Buehler, Gonon, Teichmann and Wood (2019),
 and compared with delta hedging and with no-trade bands. The aim is deep hedging under
-rough volatility; the markets so far are Black-Scholes and Heston.
+rough volatility; sessions 00 to 03 use Black-Scholes and Heston, and the lab also
+has a rough Bergomi generator behind the `[rough]` extra.
 
 ![Two panels of the network's position against spot on day 15 of a 30-day short call. Without costs the dots and three response lines lie on Black-Scholes delta; at 50 bp the response lines fan out and the dots form a band around a curve flatter than delta](docs/00_no_trade_band.png)
 
@@ -129,10 +130,20 @@ network has learned the gamma-shaped width of the theory.
 ## What is in the repository
 
 - `deephedge/env.py`, `markets.py`: the market environment (instruments, features,
-  payoff, price, benchmark hedge, a pluggable cost) and the Black-Scholes simulator.
-- `deephedge/heston.py`: Heston by full truncation Euler, a variance swap, the
-  characteristic-function price and the model hedge.
-- `deephedge/costs.py`: proportional, fixed-plus-proportional and quadratic costs.
+  payoff, price, benchmark hedge, a pluggable cost) and helpers. Black-Scholes still
+  re-exports from here for the sessions.
+- `deephedge/paths.py`: named path arrays with validated state, instrument and feature
+  names, and `to_torch`.
+- `deephedge/generators/`: Black-Scholes, Heston and rough Bergomi simulators, each with
+  an optional pricer. Heston and Black-Scholes stay Market subclasses for one release;
+  `deephedge/heston.py` re-exports Heston.
+- `deephedge/pricing.py`: Black-Scholes formulas and a nested Monte Carlo pricer with
+  standard errors.
+- `deephedge/contracts.py`: a vanilla call and put (more contracts come later).
+- `deephedge/spec.py`, `registry.py`: the graph spec, validator and block registry;
+  schema in `docs/schema/graph-v1.json`.
+- `deephedge/costs.py`: proportional, fixed-plus-proportional and quadratic costs, with
+  a per-date split for the ledger.
 - `deephedge/risk.py`: entropic risk and CVaR, in numpy and torch.
 - `deephedge/policy.py`, `train.py`: the networks, rollouts, end-to-end training and the
   cached settings of each session.
@@ -140,6 +151,8 @@ network has learned the gamma-shaped width of the theory.
   summaries used in session 03.
 - `deephedge/figures.py`: every PNG in `docs/` and `docs/results.csv`.
 - `deephedge/export.py`: a compact JSON of paths, positions and P&L (provisional schema).
+- Optional extra `[rough]`: pins `rough-volatility` at tag `v0.1.0` for the rough
+  Bergomi adapter (`pip install "deep-hedging[rough]"`).
 - `sessions/00` to `03`: marimo apps, with static copies in `docs/*.html`.
 - `tests/`: checks against closed forms and known rates; `pytest --impl=exercises` runs
   them against from-scratch implementations in `exercises/`.
@@ -167,7 +180,7 @@ The interactive sessions: `uv run marimo run sessions/03_whalley_wilmott.py` (an
 
 ## Limits
 
-- Simulated markets only: Black-Scholes and Heston, no market data.
+- Simulated markets only: Black-Scholes, Heston and rough Bergomi, no market data.
 - In Heston at zero cost the network does not beat the model hedge; the gap to the paper's
   1.94 is the coarse variance step of the simulation.
 - Under a fixed charge the network loses to delta (1.79 against 1.61). It was trained on a
@@ -175,8 +188,11 @@ The interactive sessions: `uv run marimo run sessions/03_whalley_wilmott.py` (an
   on almost every date.
 - The learned band's cost exponent sits below the analytic 1/3 at discrete rehedging.
 - One network per cost and per rehedging frequency, each trained on one seed.
-- Rough Bergomi is not yet integrated; its simulator is in
-  [rough-volatility](https://github.com/coreyjpritchard/rough-volatility).
+- Rough Bergomi is available as `generator.rough_bergomi` via the `[rough]` extra
+  (simulator in [rough-volatility](https://github.com/coreyjpritchard/rough-volatility)
+  at tag `v0.1.0`). Sessions 00 to 03 still use Black-Scholes and Heston only; the
+  classical rough Bergomi benchmark is the Black-Scholes delta at current volatility
+  and, at 50 bp spot cost, loses to not hedging (see LOG.md).
 
 The plan is in [ROADMAP.md](ROADMAP.md) and dated notes are in [LOG.md](LOG.md).
 
