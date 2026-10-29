@@ -1,0 +1,24 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+      - name: Install the locked environment
+        run: uv sync --locked --extra dev
+      - name: Lint
+        run: uv run --locked ruff check .
+      - name: Format
+        run: uv run --locked ruff format --check .
+      - name: Fast tests
+        run: uv run --locked pytest -m "not slow" -q
