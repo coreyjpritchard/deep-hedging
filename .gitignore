@@ -12,3 +12,8 @@ data/cache/
 docs/*.html.tmp
 .ipynb_checkpoints/
 __marimo__/
+
+# Snapshot-calibrated weights and evaluation tables stay local.
+# They may contain results derived from a user-supplied option snapshot.
+data/weights/surfaces/
+data/exports/local/
