@@ -245,9 +245,8 @@ behind. M02 is built in two PRs: M02a (paths, protocols, generators, pricers) an
   = 1.5, rho = -0.7, xi0 = 0.04` simulates 20k by 30 in under 30 seconds on four cores.
   `H` is an adjustable spec parameter with 0.1 as the default (D5, matching the PREREG).
   The empirical reference, from the rough-volatility repo's own estimates, is H about
-  0.148 on the Oxford-Man rv5 realised-variance series (Monte Carlo SE about 0.013) and
-  about 0.167 from the SPX implied-volatility skew (0.115 to 0.207 across expiry
-  windows); the preset is rougher than both.
+  0.148 on the Oxford-Man rv5 realised-variance series (Monte Carlo SE about 0.013);
+  the preset is rougher than that realised-volatility estimate.
 
 ## M12 Generator: regime-switching Bergomi (volsurface)
 
@@ -276,7 +275,7 @@ behind. M02 is built in two PRs: M02a (paths, protocols, generators, pricers) an
 - Inputs: `volsurface.chains.load_snapshot`, `core.market_data_from_snapshot`,
   `fit.sanos.SanosFitter`, `fit.svi.SVIFitter`, `arbitrage.check.check_surface`,
   `models.localvol.dupire`, `models.localvol.LocalVol`, `fit.rbergomi.calibrate`; the
-  committed `SPX_2026-10-14.parquet`.
+  a user-supplied local option-chain snapshot (not redistributed).
 - Outputs: `LocalVol` generator from a `(t_grid, k_grid, variance)` triple; `SPXSurface`
   generator that fits a snapshot (SANOS by default), checks arbitrage, builds the Dupire
   grid and either a `LocalVol` generator or a calibrated `RoughBergomi` generator;
@@ -287,8 +286,8 @@ behind. M02 is built in two PRs: M02a (paths, protocols, generators, pricers) an
   vanilla prices at `t = 0` match the surface's `call(T, k)` within the Monte Carlo
   standard error; seed determinism.
 - Acceptance: a spec with `generator.spx_surface` and `contract.vanilla` runs end to
-  end from the committed snapshot in under five minutes. The committed
-  `SPX_2026-10-14.parquet` in volsurface is the lab's default SPX snapshot (D8).
+  end from a user-supplied local snapshot in under five minutes. That snapshot is
+  not redistributed; see D8.
 
 ## M14 Generators: uploads (paths CSV, block bootstrap, user module)
 

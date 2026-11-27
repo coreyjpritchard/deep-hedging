@@ -321,15 +321,17 @@ decision, cited as D1 to D10 where the plan depends on it.
 5. **D5 Hurst preset.** The rough Bergomi default preset is `H = 0.1`, matching the
    PREREG, exposed as an adjustable parameter. The empirical reference is my
    own estimates in the rough-volatility repo: H about 0.148 on Oxford-Man rv5 (SE about
-   0.013) and about 0.167 on SPX (0.115 to 0.207 across windows). An earlier draft of
-   this plan said 0.07 was closer to realised-variance estimates; that was wrong. The
-   session 05 sweep over H brackets these values.
+   0.013). An earlier draft of this plan said 0.07 was closer to realised-variance
+   estimates; that was wrong. The
+   session 05 sweep over H brackets that realised-volatility estimate.
 6. **D6 Static replication.** The Carr-Madan static replication block is a later-wave
    item, not part of the first release.
 7. **D7 Signature features.** M06 implements truncated level-2 and level-3 signatures by
    hand; no `iisignature` or `signatory` dependency.
-8. **D8 SPX data.** The committed `SPX_2026-10-14.parquet` snapshot in volsurface is the
-   lab's default. The daily IBKR snapshot job stays where it is, outside this repository.
+8. **D8 Option-chain data.** The lab reads a local option-chain snapshot the user
+   supplies (for example via the Cboe fetch script in volsurface). That snapshot is
+   not redistributed. The daily IBKR snapshot job stays where it is, outside this
+   repository.
 9. **D9 Run-time budget.** Accepted: a default lab run finishes in under two minutes
    (2,000 paths, 20 epochs, four cores); committed session caches regenerate in under
    five minutes.
