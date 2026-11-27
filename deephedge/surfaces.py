@@ -12,6 +12,21 @@ Evaluation reports mean P&L, standard deviation, CVaR at 50 percent and
 hedge, a spot-only delta, and no hedge, at the same proportional cost.
 P&L uses the simulator's own premium. The surface premium is stored
 alongside so a constant shift can be applied later.
+
+Snapshot Heston is simulated on a fine Euler grid (480 steps, as in
+session 01) and then subsampled so the hedge still trades only on the
+30 daily dates. The variance-swap mark is taken from that fine grid,
+not recomputed on the coarse dates. A 30-step Euler scheme is too
+coarse for a high vol-of-vol fit: the unhedged mean P&L must be
+consistent with zero within two standard errors before the table is
+trusted.
+
+How to read the evaluation table: at zero cost, a sound hedge has mean
+P&L near zero and a much smaller standard deviation than doing nothing.
+CVaR at 95 percent and entropic risk at lambda = 1 are the cash that
+must be added to make the book acceptable. A network that beats the
+model hedge by a wide margin at zero cost is a warning, not a result;
+check the unhedged bias first.
 """
 
 from __future__ import annotations
@@ -26,6 +41,7 @@ import numpy as np
 import torch
 
 from deephedge.env import Environment, ProportionalCost
+from deephedge.paths import Paths
 from deephedge.policy import HestonPolicy, MLPPolicy, rollout_numpy, rollout_positions
 from deephedge.risk import cvar, entropic, entropic_torch, mean_se
 from deephedge.train import (
@@ -47,6 +63,10 @@ EVAL_SEED = 12345
 LAM = 1.0
 COSTS = (0.0, 0.005)
 MARKETS = ("snapshot_bs", "snapshot_heston")
+# Session 01: simulate 480 Euler steps and keep every 16th date, so the
+# hedge still trades on the same 30 daily dates.
+HEDGE_STEPS = 30
+SIM_STEPS = 480
 
 
 def load_calibration(path: Path | str) -> dict[str, Any]:
@@ -109,10 +129,90 @@ def heston_setup(
     return replace(setup, **overrides) if overrides else setup
 
 
-def weights_path(market: str, cost: float) -> Path:
+def weights_path(market: str, cost: float, *, sim_steps: int | None = None) -> Path:
     """Local, gitignored path for a snapshot-market policy. Not session 00-03."""
     bp = int(round(float(cost) * 1e4))
+    if market == "snapshot_heston":
+        n_sim = int(sim_steps if sim_steps is not None else SIM_STEPS)
+        return WEIGHTS_DIR / f"{market}_c{bp:03d}bp_sim{n_sim}.pt"
     return WEIGHTS_DIR / f"{market}_c{bp:03d}bp.pt"
+
+
+def subsample_hedge_dates(paths: Paths, n_hedge: int) -> Paths:
+    """Keep ``n_hedge`` equally spaced dates, including inception and maturity.
+
+    The instrument marks, including the variance-swap price, are taken from
+    the fine grid rather than recomputed on the coarse dates.
+    """
+    n_sim = paths.n_steps
+    if n_hedge < 1:
+        raise ValueError("n_hedge must be at least 1")
+    if n_sim % n_hedge != 0:
+        raise ValueError(f"n_sim={n_sim} must be a multiple of n_hedge={n_hedge}")
+    idx = np.arange(0, n_sim + 1, n_sim // n_hedge)
+    if int(idx[-1]) != n_sim:
+        raise ValueError("subsample must include the terminal date")
+
+    def take(array: np.ndarray) -> np.ndarray:
+        array = np.asarray(array)
+        if array.ndim == 1:
+            return array[idx]
+        return np.take(array, idx, axis=1)
+
+    return Paths(
+        time=take(paths.time),
+        instruments=take(paths.instruments),
+        features=take(paths.features),
+        discount=take(paths.discount),
+        state={name: take(value) for name, value in paths.state.items()},
+        instrument_names=paths.instrument_names,
+        feature_names=paths.feature_names,
+        source=paths.source,
+    )
+
+
+def simulate_hedge_dates(market, m: int, n_hedge: int, n_sim: int, seed: int) -> Paths:
+    """Simulate on ``n_sim`` steps and, if needed, subsample to ``n_hedge`` dates."""
+    if n_sim < n_hedge:
+        raise ValueError(f"n_sim={n_sim} must be at least n_hedge={n_hedge}")
+    paths = market.simulate(m, n_sim, seed)
+    if n_sim == n_hedge:
+        return paths
+    return subsample_hedge_dates(paths, n_hedge)
+
+
+def unhedged_premium_gap(
+    market,
+    *,
+    n_paths: int,
+    n_sim: int,
+    seed: int,
+) -> dict[str, float]:
+    """Unhedged mean P&L (simulator premium minus payoff) and its standard error."""
+    paths = market.simulate(n_paths, n_sim, seed)
+    premium = float(market.premium())
+    payoff = np.asarray(market.payoff(paths) * paths.discount_terminal(), dtype=float)
+    pnl = premium - payoff
+    mean = float(pnl.mean())
+    se = mean_se(pnl)
+    swap = paths.instruments[:, :, 1] if paths.n_instruments > 1 else None
+    rec = {
+        "mean": mean,
+        "mean_se": se,
+        "abs_mean_over_se": (abs(mean) / se) if se > 0.0 else float("inf"),
+        "within_2se": bool(abs(mean) <= 2.0 * se),
+        "premium": premium,
+        "n_paths": float(n_paths),
+        "n_sim": float(n_sim),
+        "eval_seed": float(seed),
+    }
+    if swap is not None:
+        disc = paths.discount
+        if disc.ndim == 1:
+            rec["swap_gap"] = float(np.mean(swap[:, -1] * disc[-1] - swap[:, 0] * disc[0]))
+        else:
+            rec["swap_gap"] = float(np.mean(swap[:, -1] * disc[:, -1] - swap[:, 0] * disc[:, 0]))
+    return rec
 
 
 def train_black_scholes(setup: Setup, path: Path | None = None) -> TrainResult:
@@ -129,11 +229,16 @@ def train_heston_entropic(
     *,
     lam: float = LAM,
     market: str = "snapshot_heston",
+    n_sim: int = SIM_STEPS,
 ) -> TrainResult:
-    """Train a ``HestonPolicy`` by minimising entropic risk, not session-01 CVaR."""
+    """Train a ``HestonPolicy`` by minimising entropic risk, not session-01 CVaR.
+
+    Paths are simulated on ``n_sim`` Euler steps and subsampled to
+    ``setup.n_steps`` hedge dates, as in the session 01 fine-grid check.
+    """
     torch.manual_seed(setup.seed)
     market_model = setup.market()
-    paths = market_model.simulate(setup.m_train, setup.n_steps, setup.seed)
+    paths = simulate_hedge_dates(market_model, setup.m_train, setup.n_steps, n_sim, setup.seed)
     prices = torch.as_tensor(paths.discounted_instruments(), dtype=torch.float32)
     features = torch.as_tensor(paths.features, dtype=torch.float32)
     terminal = np.asarray(paths.discount_terminal(), dtype=np.float32)
@@ -162,7 +267,7 @@ def train_heston_entropic(
         premium=market_model.premium(),
         batch_size=setup.batch_size,
     )
-    destination = path or weights_path(market, setup.cost)
+    destination = path or weights_path(market, setup.cost, sim_steps=n_sim)
     save_heston_policy(result.policy, setup, destination, result.wall_time)
     return result
 
@@ -221,9 +326,13 @@ def evaluate_market(
     n_steps: int,
     seed: int,
     surface_premium: float | None = None,
+    n_sim: int | None = None,
 ) -> list[dict[str, Any]]:
     """Score the network, the model hedge, a spot-only delta, and no hedge."""
-    paths = market.simulate(n_paths, n_steps, seed)
+    if n_sim is None or n_sim == n_steps:
+        paths = market.simulate(n_paths, n_steps, seed)
+    else:
+        paths = simulate_hedge_dates(market, n_paths, n_steps, n_sim, seed)
     env = Environment(market, ProportionalCost(cost))
     premium = float(market.premium())
     hedges = {
@@ -243,6 +352,8 @@ def evaluate_market(
             "hedge": hedge,
             "cost": float(cost),
             "eval_seed": int(seed),
+            "n_steps": int(n_steps),
+            "n_sim": int(n_sim if n_sim is not None else n_steps),
             **stats,
         }
         if surface_premium is not None:
@@ -264,13 +375,17 @@ def train_markets(
     summary = []
     for market_name in markets:
         for cost in costs:
-            path = weights_path(market_name, cost)
             if market_name == "snapshot_bs":
-                setup = black_scholes_setup(calibration, cost, **extra)
+                path = weights_path(market_name, cost)
+                setup_kwargs = {k: v for k, v in extra.items() if k != "n_sim"}
+                setup = black_scholes_setup(calibration, cost, **setup_kwargs)
                 result = train_black_scholes(setup, path)
             elif market_name == "snapshot_heston":
-                setup = heston_setup(calibration, cost, fit="contract", **extra)
-                result = train_heston_entropic(setup, path, market=market_name)
+                n_sim = int(extra.get("n_sim", SIM_STEPS))
+                path = weights_path(market_name, cost, sim_steps=n_sim)
+                setup_kwargs = {k: v for k, v in extra.items() if k != "n_sim"}
+                setup = heston_setup(calibration, cost, fit="contract", **setup_kwargs)
+                result = train_heston_entropic(setup, path, market=market_name, n_sim=n_sim)
             else:
                 raise ValueError(f"unknown market {market_name!r}")
             summary.append(
@@ -280,6 +395,12 @@ def train_markets(
                     "path": str(path),
                     "wall_time": result.wall_time,
                     "final_objective": result.history[-1] if result.history else None,
+                    "n_sim": int(
+                        extra.get(
+                            "n_sim",
+                            SIM_STEPS if market_name == "snapshot_heston" else 30,
+                        )
+                    ),
                 }
             )
     return summary
@@ -300,17 +421,23 @@ def evaluate_markets(
     rows: list[dict[str, Any]] = []
     for market_name in markets:
         for cost in costs:
-            path = weights_path(market_name, cost)
-            if not path.exists():
-                raise FileNotFoundError(f"missing weights {path}; train first")
+            setup_kwargs = {k: v for k, v in extra.items() if k != "n_sim"}
             contract = calibration["contract"]
-            n_steps = int(extra.get("n_steps", contract.get("n_steps", 30)))
+            n_steps = int(setup_kwargs.get("n_steps", contract.get("n_steps", 30)))
             if market_name == "snapshot_bs":
+                path = weights_path(market_name, cost)
+                if not path.exists():
+                    raise FileNotFoundError(f"missing weights {path}; train first")
                 policy, _setup = load_policy(path)
-                market = black_scholes_setup(calibration, cost, **extra).market()
+                market = black_scholes_setup(calibration, cost, **setup_kwargs).market()
+                n_sim = n_steps
             elif market_name == "snapshot_heston":
+                n_sim = int(extra.get("n_sim", SIM_STEPS))
+                path = weights_path(market_name, cost, sim_steps=n_sim)
+                if not path.exists():
+                    raise FileNotFoundError(f"missing weights {path}; train first")
                 policy, _setup = load_heston_policy(path)
-                market = heston_setup(calibration, cost, fit="contract", **extra).market()
+                market = heston_setup(calibration, cost, fit="contract", **setup_kwargs).market()
             else:
                 raise ValueError(f"unknown market {market_name!r}")
             rows.extend(
@@ -323,6 +450,7 @@ def evaluate_markets(
                     n_steps=n_steps,
                     seed=seed,
                     surface_premium=surface_premium,
+                    n_sim=n_sim,
                 )
             )
     return rows
@@ -349,19 +477,32 @@ def _parse_costs(text: str) -> tuple[float, ...]:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("train", "eval"))
+    parser.add_argument("command", choices=("train", "eval", "bias"))
     parser.add_argument("--calibration", type=Path, required=True)
     parser.add_argument("--markets", default=",".join(MARKETS))
     parser.add_argument("--costs", default="0,0.005")
     parser.add_argument("--out", type=Path, default=RESULTS_DIR / "surfaces_eval.json")
     parser.add_argument("--paths", type=int, default=20_000)
     parser.add_argument("--seed", type=int, default=EVAL_SEED)
+    parser.add_argument("--sim-steps", type=int, default=SIM_STEPS)
     args = parser.parse_args(argv)
     calibration = load_calibration(args.calibration)
     markets = tuple(name.strip() for name in args.markets.split(",") if name.strip())
     costs = _parse_costs(args.costs)
+    overrides = {"n_sim": int(args.sim_steps)}
+    if args.command == "bias":
+        market = heston_setup(calibration, 0.0, fit="contract").market()
+        rec = unhedged_premium_gap(
+            market, n_paths=args.paths, n_sim=int(args.sim_steps), seed=args.seed
+        )
+        print(
+            f"n_sim={int(rec['n_sim'])} n={int(rec['n_paths'])} "
+            f"unhedged mean={rec['mean']:+.6f} se={rec['mean_se']:.6f} "
+            f"|mean|/se={rec['abs_mean_over_se']:.2f} within_2se={rec['within_2se']}"
+        )
+        return
     if args.command == "train":
-        summary = train_markets(calibration, markets=markets, costs=costs)
+        summary = train_markets(calibration, markets=markets, costs=costs, overrides=overrides)
         for row in summary:
             print(
                 f"{row['market']} cost={row['cost']} "
@@ -374,14 +515,17 @@ def main(argv: list[str] | None = None) -> None:
         costs=costs,
         n_paths=args.paths,
         seed=args.seed,
+        overrides=overrides,
     )
     write_results(
         args.out,
         rows,
         calibration=str(args.calibration),
+        n_sim=int(args.sim_steps),
         note=(
-            "P&L uses the simulator premium. Snapshot-derived numbers in this "
-            "file stay local and are not committed."
+            "P&L uses the simulator premium. Snapshot Heston is simulated on "
+            "a fine Euler grid and hedged on the daily dates. Snapshot-derived "
+            "numbers in this file stay local and are not committed."
         ),
     )
     print(f"wrote {args.out} ({len(rows)} rows)")

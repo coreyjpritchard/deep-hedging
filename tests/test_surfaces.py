@@ -40,7 +40,15 @@ def _calibration() -> dict:
     }
 
 
-TINY = {"m_train": 64, "epochs": 1, "width": 8, "depth": 1, "batch_size": 32, "seed": 1}
+TINY = {
+    "m_train": 64,
+    "epochs": 1,
+    "width": 8,
+    "depth": 1,
+    "batch_size": 32,
+    "seed": 1,
+    "n_sim": 8,
+}
 
 
 def test_setups_read_the_calibration_contract():
@@ -62,6 +70,11 @@ def test_weights_path_is_not_a_session_checkpoint():
     assert "s01" not in path.name
     assert "surfaces" in path.parts
     assert path.name == "snapshot_bs_c050bp.pt"
+    heston = surfaces.weights_path("snapshot_heston", 0.005)
+    assert heston.name == "snapshot_heston_c050bp_sim480.pt"
+    assert "s01" not in heston.name
+    fine = surfaces.weights_path("snapshot_heston", 0.0, sim_steps=8)
+    assert fine.name == "snapshot_heston_c000bp_sim8.pt"
 
 
 def test_parse_costs_accepts_rates_and_basis_points():
@@ -80,7 +93,7 @@ def test_train_and_evaluate_synthetic_markets(tmp_path: Path, monkeypatch: pytes
     )
     assert {row["market"] for row in summary} == {"snapshot_bs", "snapshot_heston"}
     assert (tmp_path / "snapshot_bs_c000bp.pt").exists()
-    assert (tmp_path / "snapshot_heston_c000bp.pt").exists()
+    assert (tmp_path / "snapshot_heston_c000bp_sim8.pt").exists()
     rows = surfaces.evaluate_markets(
         cal,
         markets=("snapshot_bs", "snapshot_heston"),
@@ -104,3 +117,32 @@ def test_train_and_evaluate_synthetic_markets(tmp_path: Path, monkeypatch: pytes
         assert np.isfinite(row["cvar_50"])
         assert np.isfinite(row["entropic_1"])
         assert "s00" not in str(tmp_path)
+        if row["market"] == "snapshot_heston":
+            assert row["n_sim"] == 8
+            assert row["n_steps"] == 4
+
+
+def test_subsample_keeps_endpoints_and_the_fine_swap_mark():
+    cal = _calibration()
+    market = surfaces.heston_setup(cal, 0.0, fit="contract", n_steps=4).market()
+    fine = market.simulate(16, 8, seed=2)
+    coarse = surfaces.subsample_hedge_dates(fine, 4)
+    assert coarse.n_steps == 4
+    assert coarse.time[0] == pytest.approx(fine.time[0])
+    assert coarse.time[-1] == pytest.approx(fine.time[-1])
+    np.testing.assert_allclose(coarse.spot[:, 0], fine.spot[:, 0])
+    np.testing.assert_allclose(coarse.spot[:, -1], fine.spot[:, -1])
+    # The swap mark at a kept date is the fine-grid mark, not a 4-step resimulate.
+    np.testing.assert_allclose(coarse.instruments[:, :, 1], fine.instruments[:, 0::2, 1])
+    with pytest.raises(ValueError, match="multiple"):
+        surfaces.subsample_hedge_dates(fine, 3)
+
+
+def test_unhedged_gap_keys():
+    cal = _calibration()
+    market = surfaces.heston_setup(cal, 0.0, fit="contract").market()
+    rec = surfaces.unhedged_premium_gap(market, n_paths=32, n_sim=8, seed=1)
+    assert rec["n_sim"] == 8
+    assert rec["n_paths"] == 32
+    assert "mean" in rec and "mean_se" in rec and "within_2se" in rec
+    assert "swap_gap" in rec
