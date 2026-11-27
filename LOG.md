@@ -13,6 +13,34 @@ benchmark is the Black-Scholes delta at `sqrt(v_t)`, which loses to not hedging 
 (see the M11a entry).
 
 
+## 2026-11-27 Snapshot-calibrated deep hedgers
+
+`deephedge/surfaces.py` trains and evaluates a network in a Black-Scholes or
+Heston market whose parameters come from a user-supplied volsurface
+calibration JSON. The network minimises entropic risk at lambda = 1, as in
+session 00. Evaluation reports mean P&L, standard deviation, CVaR at 50
+percent and 95 percent, and entropic risk, for the network, the model hedge,
+a spot-only delta, and no hedge, at the same proportional cost. P&L uses the
+simulator premium; the surface premium is stored alongside.
+
+Snapshot Heston is simulated on a fine Euler grid of 480 steps, as in the
+session 01 check, and then subsampled so the hedge still trades on the 30
+daily dates. The variance-swap mark is taken from that fine grid. A 30-step
+Euler scheme is too coarse for a high vol-of-vol fit; the unhedged mean P&L
+must sit within two standard errors of zero before the table is trusted.
+
+How to read the evaluation table: at zero cost, a sound hedge has mean P&L
+near zero and a much smaller standard deviation than doing nothing. CVaR at
+95 percent and entropic risk at lambda = 1 are the cash that must be added
+to make the book acceptable. A network that beats the model hedge by a wide
+margin at zero cost is a warning, not a result; check the unhedged bias
+first.
+
+`make surfaces-train` and `make surfaces-eval` need `CALIBRATION=`. Weights
+go under `data/weights/surfaces/` and the table under `data/exports/local/`,
+both gitignored. Session 00-03 weights and results are not touched.
+Snapshot-derived numbers are not committed.
+
 ## 2026-10-27 M11a: rough Bergomi adapter over roughvol v0.1.0
 
 `deephedge/generators/rbergomi.py` wraps `roughvol.rbergomi.RoughBergomi` at tag
