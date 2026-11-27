@@ -148,8 +148,7 @@ scales with the Hurst exponent and whether a feature-based network loses to a re
 one as H falls, is a direct comparison of two hedger nodes on one generator node swept
 over `H`. The default preset is `H = 0.1` (D5, as in the PREREG). The sweep should
 bracket the empirical reference from the rough-volatility repo, H about 0.148 on
-Oxford-Man rv5 (SE about 0.013) and about 0.167 on SPX (0.115 to 0.207 across windows),
-as well as values below 0.1.
+Oxford-Man rv5 (SE about 0.013), as well as values below 0.1.
 
 ## 8. Honest evaluation
 
